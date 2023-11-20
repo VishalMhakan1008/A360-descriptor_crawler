@@ -1,0 +1,103 @@
+import pandas as pd
+import os
+from time import time
+
+start_time = time()
+
+path = r'C:\Users\admin\Downloads\listofpath'
+dir_list = os.listdir(path)
+
+count = 0
+
+
+def comparing_columns(column1, column2):
+    global count
+    # removing null values
+    non_null_values_c1 = column1.dropna()
+    non_null_values_c2 = column2.dropna()
+    matching_values = non_null_values_c1.isin(non_null_values_c2)
+
+    if len(non_null_values_c1) > 0:
+        forward_matching = (matching_values.sum() / len(non_null_values_c1)) * 100
+    else:
+        forward_matching = float(0.0)
+
+    if len(non_null_values_c2) > 0:
+        reverse_matching = (matching_values.sum() / len(non_null_values_c2)) * 100
+    else:
+        reverse_matching = float(0.0)
+
+    count += 1
+    return forward_matching, reverse_matching, count
+
+
+def column_level_analysis(first_dataframe, table1, second_dataframe, table2):
+    for column1 in first_dataframe.columns:
+        f_datatype = first_dataframe[column1].dtype
+        for column2 in second_dataframe.columns:
+            s_datatype = second_dataframe[column2].dtype
+            if f_datatype == s_datatype:
+                forward_matching, reverse_matching, count = comparing_columns(first_dataframe[column1],
+                                                                              second_dataframe[column2])
+                print(os.linesep + "comparison_count:" + str(count))
+                print("First Table :" + table1 + os.linesep + "Second Table:" + table2)
+                print("column 1:" + column1 + os.linesep + "column 2:" + column2)
+                print("Forward Matching percentage :" + str(forward_matching))
+                print("Reverse Matching percentage :" + str(reverse_matching))
+
+
+def column_process(concat_tables_dataframes):
+    table_list = list(concat_tables_dataframes.keys())
+    data_frames = list(concat_tables_dataframes.values())
+    for constant_df in range(len(data_frames) - 1):
+        for dynamic_df in range(constant_df + 1, len(data_frames)):
+            column_level_analysis(data_frames[constant_df], table_list[constant_df],
+                                  data_frames[dynamic_df], table_list[dynamic_df])
+
+
+def table_and_dataframes_persist(list_table_dataframes):
+    concat_tables_dataframes = {}
+    for table in list_table_dataframes.keys():
+        final_df = pd.concat(list_table_dataframes[table], axis=0, ignore_index=True)
+        concat_tables_dataframes[table] = final_df
+    column_process(concat_tables_dataframes)
+
+
+def process_tables(tables, schema):
+    common_data_type = 'str'
+    table_dataframes = {}
+    for table in tables.keys():
+        list_dataframes = []
+        for file in tables[table]:
+            df = pd.read_csv(os.path.join(path, schema, table, file), dtype=common_data_type)
+            list_dataframes.append(df)
+        table_dataframes[table] = list_dataframes
+    table_and_dataframes_persist(table_dataframes)
+
+
+table_files = {}
+
+
+def get_list_of_tables(table_folders, schema):
+    for table in table_folders:
+        # list of tables where present inside the table folder
+        list_tables = os.listdir(os.path.join(path, schema, table))
+        table_files[table] = list_tables
+    process_tables(table_files, schema)
+
+
+schema_table_list = {}
+
+for schema in dir_list:
+    tables = os.listdir(os.path.join(path, schema))
+    schema_table_list[schema] = tables
+
+for key in schema_table_list:
+    tables = schema_table_list[key]
+    get_list_of_tables(tables, key)
+
+end_time = time()
+elapsed_time = (end_time - start_time) / 60
+print(elapsed_time)
+
+print(f"Elapsed time: {elapsed_time:.2f} minutes")
