@@ -1,8 +1,6 @@
 import jsonpickle
 from flask import Flask, request, jsonify
 
-from bean.MetaColumnInfoBean import MetaColumnInfoBean
-from bean.TableBean import TableBean
 from processor.FileProcessor import FileProcessor
 from processor.MetaDataProcessor import MetadataProcessor
 
