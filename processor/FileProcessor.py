@@ -1,4 +1,5 @@
 import ftplib
+import io
 import os
 import stat
 
@@ -16,6 +17,7 @@ class FileProcessor:
         file_path = connection_dto['filePath']
         sftp = None
         ftp = None
+        local_files = []
         if connection_dto['connectionType'] == 'SFTP':
             sftp = self.establish_sftp_connection(connection_dto)
             remote_files = self.get_remote_csv_files(sftp, file_path)
@@ -39,8 +41,12 @@ class FileProcessor:
                     metadata_list.append(metadata)
                 except UnicodeDecodeError as e:
                     print(f"Error decoding file: {remote_file}. {e}")
-        sftp.close()
-        ftp.quit()
+        if sftp is not None:
+            sftp.close()
+
+        if ftp is not None:
+            ftp.quit()
+
         if local_files:
             for local_file in local_files:
                 csv_data = pd.read_csv(local_file)
@@ -67,22 +73,25 @@ class FileProcessor:
 
     def get_remote_csv_files_for_ftp(self, ftp, file_path):
         csv_files = []
-
-        directories = file_path.split('/')
-
-        ftp.cwd('/')
-
-        for directory in directories:
-            if directory:
-                ftp.cwd(directory)
-
-        files = ftp.nlst()
-
-        for file in files:
-            if file.endswith(".csv"):
-                csv_files.append(file)
-
+        self._walk_ftp(ftp, file_path, csv_files)
         return csv_files
+
+    def _walk_ftp(self, ftp, remote_path, csv_files):
+        try:
+            files = ftp.nlst(remote_path)
+            for file in files:
+                file_path = os.path.join(remote_path, file)
+                try:
+                    ftp.cwd(file_path)
+                    self._walk_ftp(ftp, file_path, csv_files)
+                except ftplib.error_perm:
+                    if file.endswith(".csv"):
+                        file_content = io.BytesIO()
+                        ftp.retrbinary(f"RETR {file}", file_content.write)
+                        file_content.seek(0)
+                        csv_files.append(file_content)
+        except ftplib.error_perm as e:
+            print(f"FTP error: {e}")
 
     def establish_ftp_connection(self, connection_dto):
         ftp = ftplib.FTP()
