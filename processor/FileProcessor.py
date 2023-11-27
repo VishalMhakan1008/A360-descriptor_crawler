@@ -4,8 +4,11 @@ import os
 import stat
 
 import duckdb
+import dask.dataframe as dd
 import pandas as pd
 import paramiko
+from dask import delayed
+from dask.distributed import Client
 
 from bean.ColumnBean import ColumnBean
 from bean.TableBean import TableBean
@@ -13,19 +16,21 @@ from bean.TableBean import TableBean
 
 class FileProcessor:
     def process_file(self, connection_dto):
-        schema_table_map = {}
-        file_path = connection_dto['filePath']
+        client = Client()
+        file_path = connection_dto.get('file_path', None)
+        tableName = connection_dto.get('table_name', None)
+        #schemaName = connection_dto['schemaName']
         sftp = None
         ftp = None
         local_files = []
-        if connection_dto['connectionType'] == 'SFTP':
+        if connection_dto.get('connection_type') == 'SFTP':
             sftp = self.establish_sftp_connection(connection_dto)
             remote_files = self.get_remote_csv_files(sftp, file_path)
             local_files = None
-        elif connection_dto['connectionType'] == 'FTP':
+        elif connection_dto.get('connection_type') == 'FTP':
             ftp = self.establish_ftp_connection(connection_dto)
             remote_files = self.get_remote_csv_files_for_ftp(ftp, file_path)
-        elif connection_dto['connectionType'] == 'LocalStorage':
+        elif connection_dto.get('connection_type') == 'LocalStorage':
             local_files = self.get_local_csv_files(file_path)
             remote_files = None
         else:
@@ -34,13 +39,27 @@ class FileProcessor:
         metadata_list = []
         if remote_files:
             for remote_file in remote_files:
+                chunk_size = 10
                 try:
-                    csv_data = pd.read_csv(remote_file, encoding='latin1')
-                    # schema_name, table_name = self.extract_schema_and_table_names_for_sftp(remote_file)
-                    metadata = self.generate_metadata(csv_data, 'schema_name','table_name')
-                    metadata_list.append(metadata)
-                except UnicodeDecodeError as e:
-                    print(f"Error decoding file: {remote_file}. {e}")
+                    dask_chunks = dd.read_csv(remote_file, blocksize=chunk_size, assume_missing=True)
+
+                    processed_chunks = []
+                    futures = []
+                    for i, chunk in enumerate(dask_chunks.to_delayed()):
+                        future = delayed(self.process_chunk)(chunk, tableName, "schemaName")
+                        futures.append(future)
+
+                    try:
+                        processed_chunks = client.compute(futures, sync=True)
+                    except ValueError as e:
+                        print(f"Error processing file: {remote_file}. {e}")
+
+                    concatenated_result = self.concatenate_tables(processed_chunks)
+
+                    metadata_list.append(concatenated_result)
+                finally:
+                    pass
+
         if sftp is not None:
             sftp.close()
 
@@ -49,13 +68,34 @@ class FileProcessor:
 
         if local_files:
             for local_file in local_files:
-                csv_data = pd.read_csv(local_file)
-                schema_name, table_name = self.extract_schema_and_table_names(local_file)
-                metadata = self.generate_metadata(csv_data, schema_name, table_name)
-                metadata_list.append(metadata)
+                file_size = os.path.getsize(local_file)
+                if file_size > 500 * 1024 * 1024:
+                    chunk_size = 500 * 1024 * 1024
+                else:
+                    chunk_size = file_size
 
+                processed_chunks = []
+                futures = []
+                try:
+                    dask_chunks = dd.read_csv(local_file, blocksize=chunk_size, assume_missing=True)
+
+                    for i, chunk in enumerate(dask_chunks.to_delayed()):
+                        future = delayed(self.process_chunk)(chunk, tableName, "schemaName")
+                        futures.append(future)
+
+                    processed_chunks = client.gather(client.compute(futures))
+
+                    concatenated_result = self.concatenate_tables(processed_chunks)
+                    metadata_list.append(concatenated_result)
+                finally:
+                    pass
+
+        client.close()
         return metadata_list
 
+    def process_chunk(self, chunk, tableName, schemaName):
+        metadata = self.generate_metadata(chunk, schemaName, tableName)
+        return metadata
 
     def get_remote_csv_files(self, sftp, file_path):
         csv_files = []
@@ -95,8 +135,8 @@ class FileProcessor:
 
     def establish_ftp_connection(self, connection_dto):
         ftp = ftplib.FTP()
-        ftp.connect(connection_dto['host'], int(connection_dto['port']))
-        ftp.login(connection_dto['username'], connection_dto['password'])
+        ftp.connect(connection_dto.get('host'), int(connection_dto.get('port')))
+        ftp.login(connection_dto.get('username'), connection_dto.get('password'))
         return ftp
 
     def get_local_csv_files(self, file_path):
@@ -110,12 +150,11 @@ class FileProcessor:
 
         return csv_files
 
-    def establish_sftp_connection(self,connection_dto):
-        transport = paramiko.Transport((connection_dto['host'], int(connection_dto['port'])))
-        transport.connect(username=connection_dto['username'], password=connection_dto['password'])
+    def establish_sftp_connection(self, connection_dto):
+        transport = paramiko.Transport((connection_dto.get('host'), int(connection_dto.get('port'))))
+        transport.connect(username=connection_dto.get('username'), password=connection_dto.get('password'))
         sftp = transport.open_sftp_client()
         return sftp
-
 
     def generate_metadata(self, csv_data, schema_name, table_name):
         column_beans = []
@@ -144,15 +183,21 @@ class FileProcessor:
                     is_date_column = True
             try:
                 is_length_uniform = csv_data[column].str.len().nunique() == 1
+                type_length = csv_data[column].str.len().max()
             except AttributeError:
                 is_length_uniform = False
+                type_length = 0
 
-            column_beans.append(ColumnBean(column, data_type, distinct_row_count, null_row_count, all_numeric, is_all_alphabet, is_primary_key, is_date_column, is_length_uniform,type_length=10))
+            column_beans.append(
+                ColumnBean(column, data_type, distinct_row_count, null_row_count, all_numeric, is_all_alphabet,
+                           is_primary_key, is_date_column, is_length_uniform, type_length))
 
         column_count = len(csv_data.columns)
         row_count = len(csv_data)
 
-        table_bean = TableBean(column_count, row_count, {col: col_bean for col, col_bean in zip(csv_data.columns, column_beans)}, schema_name, table_name)
+        table_bean = TableBean(column_count, row_count,
+                               {col: col_bean for col, col_bean in zip(csv_data.columns, column_beans)}, schema_name,
+                               table_name)
 
         return table_bean
 
@@ -165,7 +210,7 @@ class FileProcessor:
 
         return schema_name, table_name
 
-    def extract_schema_and_table_names_for_sftp(self,sftp_file):
+    def extract_schema_and_table_names_for_sftp(self, sftp_file):
         if hasattr(sftp_file, 'sftp') and hasattr(sftp_file.sftp, 'stat'):
             file_info = sftp_file.sftp.stat(sftp_file)
 
@@ -180,3 +225,44 @@ class FileProcessor:
             return schema_name, table_name
         else:
             return 'DEFAULT_DB', 'DEFAULT_SCHEMA', 'DEFAULT_TABLE'
+
+    def concatenate_tables(self, table_beans):
+        if not table_beans:
+            return None
+
+        table_name = table_beans[0].table_name
+        schema_name = table_beans[0].schema_name
+
+        concatenated_columns = {}
+
+        for table_bean in table_beans:
+            for col_name, col_bean in table_bean.columns.items():
+                if col_name not in concatenated_columns:
+                    concatenated_columns[col_name] = []
+
+                concatenated_columns[col_name].append(col_bean)
+
+        for col_name, col_beans in concatenated_columns.items():
+            concatenated_values = {
+                'data_type': col_beans[0].data_type,  # Assuming all data types are the same
+                'distinct_row_count': sum(getattr(bean, 'distinct_row_count', 0) for bean in col_beans),
+                'null_row_count': sum(getattr(bean, 'null_row_count', 0) for bean in col_beans),
+                'all_numeric': any(getattr(bean, 'all_numeric', False) for bean in col_beans),
+                'all_alphabet': any(getattr(bean, 'all_alphabet', False) for bean in col_beans),
+                'primary_key': any(getattr(bean, 'primary_key', False) for bean in col_beans),
+                'is_date_column': any(getattr(bean, 'is_date_column', False) for bean in col_beans),
+                'is_length_uniform': any(getattr(bean, 'is_length_uniform', False) for bean in col_beans),
+                'type_length': sum(getattr(bean, 'type_length', 0) for bean in col_beans),
+            }
+
+            concatenated_columns[col_name] = ColumnBean(column_name=col_name, **concatenated_values)
+
+        concatenated_table_bean = TableBean(
+            column_count=sum(bean.column_count for bean in table_beans),
+            row_count=sum(bean.row_count for bean in table_beans),
+            columns=concatenated_columns,
+            schema_name=schema_name,
+            table_name=table_name
+        )
+
+        return concatenated_table_bean

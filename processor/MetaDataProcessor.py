@@ -9,8 +9,8 @@ from bean.MetaTableInfoBean import MetaTableInfoBean
 
 class MetadataProcessor:
     def process_metadata(self, connection_dto):
-        metadata_file_path = connection_dto.get('metadataFilePath')
-        connection_type = connection_dto.get('connectionType')
+        metadata_file_path = connection_dto.get('metadataFilePath', None)
+        connection_type = connection_dto.get('connection_type', None)
 
         if connection_type == 'SFTP':
             sftp = self.establish_sftp_connection(connection_dto)
@@ -57,8 +57,8 @@ class MetadataProcessor:
         return table_beans
 
     def establish_sftp_connection(self, connection_dto):
-        transport = paramiko.Transport((connection_dto['host'], int(connection_dto['port'])))
-        transport.connect(username=connection_dto['username'], password=connection_dto['password'])
+        transport = paramiko.Transport((connection_dto.get('host', None), int(connection_dto.get('port', None))))
+        transport.connect(username=connection_dto.get('username', None), password=connection_dto.get('password', None))
         sftp = transport.open_sftp_client()
         return sftp
 
@@ -69,8 +69,8 @@ class MetadataProcessor:
 
     def establish_ftp_connection(self, connection_dto):
         ftp = ftplib.FTP()
-        ftp.connect(connection_dto['host'], int(connection_dto['port']))
-        ftp.login(connection_dto['username'], connection_dto['password'])
+        ftp.connect(connection_dto.get('host', None), int(connection_dto.get('port', None)))
+        ftp.login(connection_dto.get('username', None), connection_dto.get('password', None))
         return ftp
 
     def read_csv_from_ftp(self, ftp, file_path):
