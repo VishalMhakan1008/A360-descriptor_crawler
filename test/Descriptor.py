@@ -5,7 +5,7 @@ import random
 import time
 import os
 
-import jsonpickle
+import json
 import paramiko as paramiko
 from dask.distributed import Client
 from flask import Flask, request, jsonify
@@ -59,20 +59,20 @@ if __name__ == '__main__':
         csv_files = []
         sftp = None
         ftp = None
-        if request_dto.connection_type == 'SFTP':
+        if request_dto.get('connection_type') == 'SFTP':
             sftp = processSFTP(request_dto.host, request_dto.username, request_dto.port, request_dto.password)
             csv_files = get_remote_csv_files(sftp, request_dto.file_path)
 
-        if request_dto.connection_type == 'FTP':
+        elif request_dto.get('connection_type') == 'FTP':
             ftp = processFTP(request_dto.host, request_dto.password, request_dto.port, request_dto.username)
             csv_files = get_remote_csv_files_for_ftp(ftp, request_dto.file_path)
 
-        if request_dto.connection_type == 'LocalStorage':
-            csv_files = get_local_csv_files(request_dto.file_path)
+        elif request_dto.get('connection_type') == 'LocalStorage':
+            csv_files = get_local_csv_files(request_dto.get('file_path'))
 
-        execute = Execute(request_dto.file_path, process_id)
+        execute = Execute(request_dto.get('file_path'), process_id)
         combined_metadata = execute.executeProcess(csv_files, request_dto)
-        json_list = [jsonpickle.encode(metadata.to_dict()) for metadata in combined_metadata]
+        json_str = json.dumps(combined_metadata, indent=2)
 
         if sftp is not None:
             sftp.close()
@@ -80,7 +80,7 @@ if __name__ == '__main__':
         if ftp is not None:
             ftp.quit()
 
-        output_path = execute.endProcess(json_list)
+        output_path = execute.endProcess(json_str)
         process = processes[process_id]
         process.end_time = time.time()
         process.status = 'COMPLETED'

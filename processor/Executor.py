@@ -3,14 +3,16 @@ import logging
 import os
 import time
 
+import pyodbc
+import sqlalchemy as sql
 import dask.dataframe as dd
 import duckdb as duckdb
 import pandas as pd
-from sqlalchemy import create_engine, Column, Integer, JSON
+from sqlalchemy import Column, Integer, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-from bean import TableBean
+from bean.TableBean import TableBean
 from bean.ColumnBean import ColumnBean
 
 Base = declarative_base()
@@ -28,21 +30,21 @@ class Execute:
     def __init__(self, file_path, process_id):
         self.file_path = file_path
         self.process_id = process_id
-        self.table = TableBean()
+        self.table = TableBean
 
     def executeProcess(self, remote_files, request_dto):
         logging.info("starting process %s", self.process_id)
         logging.info("starting to read csv file")
         metadata_list = []
         dask_chunks = None
-        if request_dto.connectionType == 'SFTP':
+        if request_dto.get('connection_type') == 'SFTP':
             if remote_files:
                 for remote_file in remote_files:
                     try:
                         file_size = remote_file.stat().st_size
                         chunk_size = 100000000
                         num_chunks = file_size // chunk_size + 1
-                        dask_chunks = dd.read_csv(request_dto.file_path, blocksize=chunk_size, assume_missing=True)
+                        dask_chunks = dd.read_csv(remote_file, blocksize=chunk_size, assume_missing=True)
                         for i in range(num_chunks):
                             chunk_data = dask_chunks.get_partition(i).compute()
                             metadata = self.generate_metadata(chunk_data, 'schema_name', 'table_name')
@@ -52,20 +54,24 @@ class Execute:
                     except Exception as e:
                         print(f"Error processing file: {remote_file}. {e}")
 
-        elif request_dto.connectionType == 'LocalStorage':
-            try:
-                file_size = os.path.getsize(request_dto.file_path)
-                chunk_size = 100000000
-                num_chunks = file_size // chunk_size + 1
-                dask_chunks = dd.read_csv(request_dto.file_path, blocksize=chunk_size, assume_missing=True)
-                for i in range(num_chunks):
-                    chunk_data = dask_chunks.get_partition(i).compute()
-                    metadata = self.generate_metadata(chunk_data, 'schema_name', 'table_name')
-                    metadata_list.append(metadata)
-            except UnicodeDecodeError as e:
-                print(f"Error decoding local file: {request_dto.file_path}. {e}")
-            except Exception as e:
-                print(f"Error processing local file: {request_dto.file_path}. {e}")
+        elif request_dto.get('connection_type') == 'LocalStorage':
+
+            for remote_file in remote_files:
+                try:
+                    file_size = os.path.getsize(remote_file)
+                    chunk_size = 100000000
+                    num_chunks = file_size // chunk_size + 1
+                    dask_chunks = dd.read_csv(remote_file, blocksize=chunk_size, dtype={'BIRTH_DATE': 'object',
+                                                                                        'DATE_HIRED': 'object',
+                                                                                        'TERMINATION_DATE': 'object'}, assume_missing=True)
+                    for i in range(num_chunks):
+                        chunk_data = dask_chunks.get_partition(i).compute()
+                        metadata = self.generate_metadata(chunk_data, 'schema_name', 'table_name')
+                        metadata_list.append(metadata)
+                except UnicodeDecodeError as e:
+                    print(f"Error decoding local file: {remote_file}. {e}")
+                except Exception as e:
+                    print(f"Error processing local file: {remote_file}. {e}")
 
 
         combined_metadata = self.combine_metadata(metadata_list)
@@ -79,11 +85,23 @@ class Execute:
     def endProcess(self, json_list):
         output_format = "{time}_{process_id}.json"
         output_path = output_format.format(time=time.time(), process_id=self.process_id)
-
+        user = 'postgres'
+        password = 'postgres'
+        host = 'localhost'
+        port = '5434'
+        database = 'postgres'
+        schema = 'python'
         with open(output_path, 'w') as json_file:
             json.dump(json_list, json_file, indent=4)
 
-        engine = create_engine('postgresql://postgres:postgres@localhost:5434/postgres?currentSchema=python')
+        connection_str = f'postgresql:// {user}:{password}@{host}:{port}/{database}'
+        engine = sql.create_engine(connection_str)
+        try:
+            with engine.connect() as connection_str:
+                print('Successfully connected to the PostgreSQL database')
+        except Exception as ex:
+            print(f'Sorry failed to connect: {ex}')
+
         Base.metadata.create_all(engine)
 
         Session = sessionmaker(bind=engine)
@@ -128,7 +146,7 @@ class Execute:
             type_length = csv_data[column].astype(str).apply(len).max()
             column_beans.append(
                 ColumnBean(column, data_type, distinct_row_count, null_row_count, all_numeric, is_all_alphabet,
-                           is_primary_key, is_date_column, is_length_uniform, type_length))
+                           is_primary_key, is_date_column, is_length_uniform, int(type_length)))
 
         column_count = len(csv_data.columns)
         row_count = len(csv_data)
@@ -143,6 +161,7 @@ class Execute:
         combined_metadata = {}
 
         for metadata in metadata_list:
+            metadata = metadata.to_dict()
             combined_metadata.update(metadata)
 
         return combined_metadata
