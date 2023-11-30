@@ -6,16 +6,18 @@ import time
 import os
 
 import json
+from dask.distributed import wait
 import paramiko as paramiko
 from dask.distributed import Client
 from flask import Flask, request, jsonify
 
 from bean.Process import Process
 from processor.Executor import Execute
+debug = eval(os.environ.get("DEBUG", "False"))
+processes = {}
 
 if __name__ == '__main__':
     client = Client()
-    processes = {}
     app = Flask(__name__)
 
     @app.route('/process_table', methods=['POST'])
@@ -23,20 +25,30 @@ if __name__ == '__main__':
         request_dto = get_request_dto_from_json(request.get_json())
 
 
-        process_id = random.randrange(1, 100)
+        process_id = random.randrange(1000, 1000000)
 
         fut = client.submit(start_process, request_dto, process_id)
-
         process = Process(process_id, fut, 'IN_PROGRESS')
+        process.create_record()
         processes[process_id] = process
+        wait([fut])
 
-        return jsonify({'process_id': process_id})
+        result = fut.result()
+        status = fut.status
+        print(f"Task status: {status}")
+
+        if status == 'error':
+            exception_info = client.get_task_exception(fut.key)
+            print(f"Exception info: {exception_info}")
+
+        return jsonify({'process_id': process_id, 'result': result})
 
     def get_request_dto_from_json(json_data):
         connection_dto = json_data.get('connectionDTO', {})
-
-        file_path = connection_dto.get('file_path')
-        connection_type = connection_dto.get('connection_type')
+        tableBean = json_data.get('tableBean', {})
+        file_path = connection_dto.get('filePath')
+        file_path = file_path + '/' + tableBean.get('name')
+        connection_type = connection_dto.get('connectionType')
         host = connection_dto.get('host', '')
         port = connection_dto.get('port', 0)
         username = connection_dto.get('username', '')
@@ -67,7 +79,7 @@ if __name__ == '__main__':
             ftp = processFTP(request_dto.host, request_dto.password, request_dto.port, request_dto.username)
             csv_files = get_remote_csv_files_for_ftp(ftp, request_dto.file_path)
 
-        elif request_dto.get('connection_type') == 'LocalStorage':
+        elif request_dto.get('connection_type') == 'Local Storage':
             csv_files = get_local_csv_files(request_dto.get('file_path'))
 
         execute = Execute(request_dto.get('file_path'), process_id)
@@ -81,12 +93,18 @@ if __name__ == '__main__':
             ftp.quit()
 
         output_path = execute.endProcess(json_str)
-        process = processes[process_id]
-        process.end_time = time.time()
-        process.status = 'COMPLETED'
-        process.result_path = output_path
-        processes[process_id] = process
-        logging.info(process.to_dict_result())
+        if process_id in processes:
+            process = processes[process_id]
+            process.end_time = time.time()
+            process.status = 'COMPLETED'
+            process.result_path = output_path
+            processes[process_id] = process
+            process.update_status()
+            logging.info(process.to_dict_result())
+        else:
+            print(f"Process with ID {process_id} not found.")
+
+        return json_str
 
     def processSFTP(host, username, port, password):
         transport = paramiko.Transport(host, port)

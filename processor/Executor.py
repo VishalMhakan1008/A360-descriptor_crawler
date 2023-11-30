@@ -2,8 +2,7 @@ import json
 import logging
 import os
 import time
-
-import pyodbc
+import psycopg2
 import sqlalchemy as sql
 import dask.dataframe as dd
 import duckdb as duckdb
@@ -44,7 +43,7 @@ class Execute:
                         file_size = remote_file.stat().st_size
                         chunk_size = 100000000
                         num_chunks = file_size // chunk_size + 1
-                        dask_chunks = dd.read_csv(remote_file, blocksize=chunk_size, assume_missing=True)
+                        dask_chunks = dd.read_csv(remote_file, blocksize=chunk_size, assume_missing=True, dtype='object')
                         for i in range(num_chunks):
                             chunk_data = dask_chunks.get_partition(i).compute()
                             metadata = self.generate_metadata(chunk_data, 'schema_name', 'table_name')
@@ -54,16 +53,14 @@ class Execute:
                     except Exception as e:
                         print(f"Error processing file: {remote_file}. {e}")
 
-        elif request_dto.get('connection_type') == 'LocalStorage':
+        elif request_dto.get('connection_type') == 'Local Storage':
 
             for remote_file in remote_files:
                 try:
                     file_size = os.path.getsize(remote_file)
-                    chunk_size = 100000000
+                    chunk_size = 1000
                     num_chunks = file_size // chunk_size + 1
-                    dask_chunks = dd.read_csv(remote_file, blocksize=chunk_size, dtype={'BIRTH_DATE': 'object',
-                                                                                        'DATE_HIRED': 'object',
-                                                                                        'TERMINATION_DATE': 'object'}, assume_missing=True)
+                    dask_chunks = dd.read_csv(remote_file, blocksize=chunk_size, assume_missing=True, dtype='object')
                     for i in range(num_chunks):
                         chunk_data = dask_chunks.get_partition(i).compute()
                         metadata = self.generate_metadata(chunk_data, 'schema_name', 'table_name')
@@ -78,7 +75,6 @@ class Execute:
 
         logging.info("File reading completed")
         logging.info("Total partition count is %s", dask_chunks.npartitions)
-        logging.info("fetching record count, column count")
         logging.info("Completed")
         return combined_metadata
 
@@ -90,17 +86,16 @@ class Execute:
         host = 'localhost'
         port = '5434'
         database = 'postgres'
-        schema = 'python'
         with open(output_path, 'w') as json_file:
             json.dump(json_list, json_file, indent=4)
 
-        connection_str = f'postgresql:// {user}:{password}@{host}:{port}/{database}'
-        engine = sql.create_engine(connection_str)
+        connection_str = f'postgresql://{user}:{password}@{host}:{port}/{database}'
         try:
+            engine = sql.create_engine(connection_str, module=psycopg2)
             with engine.connect() as connection_str:
                 print('Successfully connected to the PostgreSQL database')
         except Exception as ex:
-            print(f'Sorry failed to connect: {ex}')
+            print(f'Failed to connect: {ex}')
 
         Base.metadata.create_all(engine)
 
@@ -110,8 +105,6 @@ class Execute:
         process_result = ProcessResult(process_id=self.process_id, json_data=json_list)
         session.add(process_result)
         session.commit()
-
-        print(self.table.to_dict())
         return output_path
 
     def generate_metadata(self, csv_data, schema_name, table_name):
