@@ -3,8 +3,8 @@ import ftplib
 import pandas as pd
 import paramiko
 
-from bean.MetaColumnInfoBean import MetaColumnInfoBean
-from bean.MetaTableInfoBean import MetaTableInfoBean
+from descriptor.bean.MetaColumnInfoBean import MetaColumnInfoBean
+from descriptor.bean.MetaTableInfoBean import MetaTableInfoBean
 
 
 class MetadataProcessor:
