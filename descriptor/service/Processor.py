@@ -20,13 +20,12 @@ from sqlalchemy.ext.declarative import declarative_base
 
 dask.config.set(scheduler='threads')
 
-sys.setrecursionlimit(10**6)
+sys.setrecursionlimit(10 ** 6)
 logging.basicConfig(level=logging.INFO)
 
 Base = declarative_base()
 
 class Processor:
-
     def __init__(self, file_path, process_id):
         self.file_path = file_path
         self.process_id = process_id
@@ -38,7 +37,7 @@ class Processor:
 
         chunk_size = 100000000
 
-        dask_chunks, updated_metadata = self.read_csv(remote_files, chunk_size, request_dto.get('connection_type'))
+        updated_metadata = dask.compute(*self.read_csv(remote_files, chunk_size, request_dto.get('connection_type')))
 
         combined_metadata = self.combine_metadata(updated_metadata)
 
@@ -86,7 +85,7 @@ class Processor:
         try:
             for column in csv_data.columns:
                 distinct_row_count = len(csv_data[column].unique())
-                null_row_count = csv_data[column].isnull().sum().item()
+                null_row_count = csv_data[column].isnull().sum().compute().item()
                 all_numeric = all(pd.to_numeric(csv_data[column], errors='coerce').notna())
                 is_all_alphabet = all(isinstance(s, str) and s.isalpha() for s in csv_data[column].dropna())
 
@@ -121,9 +120,7 @@ class Processor:
         return table_bean
 
     def read_csv(self, files, chunk_size, connection_type):
-        dask_bag_files = db.from_sequence(files)
-        dask_chunks, updated_metadata = dask_bag_files.map(self._process_file, chunk_size=chunk_size, connection_type=connection_type).compute(scheduler='threads')
-        return dask_chunks, updated_metadata
+        return [dask.delayed(self._process_file)(file, chunk_size, connection_type) for file in files]
 
     def _process_file(self, file, chunk_size, connection_type):
         try:
@@ -133,36 +130,42 @@ class Processor:
                 file_size = os.path.getsize(file)
             else:
                 logging.warning("Unsupported connection type: %s", connection_type)
-                return None, None
+                return None
 
             num_chunks = file_size // chunk_size + 1
 
-            delayed_dask_chunks = dask.delayed(dd.read_csv)(file, blocksize=chunk_size, assume_missing=True, dtype='object')
+            delayed_dask_chunks = dask.delayed(dd.read_csv)(
+                file, blocksize=chunk_size, assume_missing=True, dtype='object'
+            )
             logging.info("File reading completed")
 
-            dask_chunks = delayed_dask_chunks.compute(scheduler='threads')
+            delayed_metadata_list = []
+            for i in range(num_chunks):
+                delayed_chunk_data = delayed_dask_chunks.get_partition(i)
 
-            bag = db.from_sequence(range(num_chunks), npartitions=num_chunks)
+                try:
+                    delayed_metadata = dask.delayed(self.generate_metadata)(
+                        delayed_chunk_data, 'schema_name', 'table_name'
+                    )
+                    delayed_metadata_list.append(delayed_metadata)
+                except Exception as e:
+                    logging.error(f"Error generating metadata for chunk {i}: {e}", exc_info=True)
 
-            delayed_metadata_list = bag.map(lambda i: self._process_chunk(i, dask_chunks))
+            try:
+                updated_metadata_list = dask.compute(*delayed_metadata_list)
+                combined_metadata = self.combine_metadata(updated_metadata_list)
+                return combined_metadata
+            except Exception as e:
+                logging.error(f"Error combining metadata: {e}", exc_info=True)
+                return None
 
-            metadata_list = delayed_metadata_list.compute(scheduler='threads')
-
-            updated_metadata = None
-            for metadata in metadata_list:
-                if metadata is not None:
-                    if updated_metadata is None:
-                        updated_metadata = metadata
-                    else:
-                        self.updateMetadata(updated_metadata, metadata)
-
-            return dask_chunks, updated_metadata
         except UnicodeDecodeError as e:
             logging.error(f"Error decoding file: {file}. {e}")
-            return None, None
+            return None
         except Exception as e:
             logging.error(f"Error processing file: {file}. {e}", exc_info=True)
-            return None, None
+            return None
+
 
 
 
@@ -171,7 +174,8 @@ class Processor:
         delayed_chunk_data = delayed_dask_chunks.get_partition(i)
         return dask.delayed(self.generate_metadata)(delayed_chunk_data, 'schema_name', 'table_name')
 
-    def combine_metadata(self, updated_metadata):
+    @staticmethod
+    def combine_metadata(updated_metadata):
         if updated_metadata is None:
             logging.warning("Updated metadata is None. Unable to combine.")
             return None
