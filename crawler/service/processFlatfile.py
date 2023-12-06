@@ -1,4 +1,3 @@
-
 import sys
 import dask
 
@@ -14,22 +13,12 @@ def print_or_store_result(combination, result):
 
 def startCrawling(combinations):
     try:
-        results = []
+        validated_combination = dask.compute(Validation.start_validation(combinations))
+        delayed_result = dask.compute(DataFrameCreations.process_flatFile(validated_combination))
+        #final result loop and get the value
 
-        validated_combination = Validation.start_validation(combinations)
-
-        delayed_results = []
-        for combination in validated_combination:
-            delayed_result = DataFrameCreations.process_flatfile(combination)
-            delayed_results.append(delayed_result)
-
-        try:
-            results = dask.compute(*delayed_results)
-        except Exception as e:
-            print(f"Error during computation: {e}")
     except Exception as e:
-        print(e)
-        traceback.print_exception(*sys.exc_info())
+        print(f"Error during computation: {e}")
 
-    # for combination, result in zip(combinations, results):
-    #     print_or_store_result(combination, result)
+# for combination, result in zip(combinations, results):
+#     print_or_store_result(combination, result)
