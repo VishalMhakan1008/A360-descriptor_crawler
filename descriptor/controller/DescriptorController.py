@@ -46,7 +46,9 @@ if __name__ == '__main__':
         process_id = random.randrange(1000, 1000000)
         process = Process(process_id, None, 'SCHEDULED')
         processes[process_id] = process
-        fut = client.submit(DescriptorService.start_process, request_dto, process_id, processes)
+
+        fut = client.submit(lambda: DescriptorService.start_process(request_dto, process_id, processes))
+
         process.future = fut
         process.status = 'IN_PROGRESS'
         process.create_record()
@@ -54,10 +56,12 @@ if __name__ == '__main__':
         result = fut.result()
         status = fut.status
         print(f"Task status: {status}")
+
         if status == 'error':
             exception_info = client.get_task_exception(fut.key)
             print(f"Exception info: {exception_info}")
 
         return jsonify({'process_id': process_id, 'result': result})
+
 
     app.run(debug=True, use_reloader=False)
