@@ -7,7 +7,7 @@ from descriptor.bean.MetaColumnInfoBean import MetaColumnInfoBean
 from descriptor.bean.MetaTableInfoBean import MetaTableInfoBean
 
 
-class MetadataProcessor:
+class MetaFileProcessor:
     def process_metadata(self, connection_dto):
         metadata_file_path = connection_dto.get('metadataFilePath', None)
         connection_type = connection_dto.get('connection_type', None)

@@ -10,8 +10,9 @@ class DescriptorService:
 
     @staticmethod
     def get_request_dto_from_json(json_data):
-        connection_dto = json_data.get('connectionDTO', {})
-        tableBean = json_data.get('tableBean', {})
+        descriptor_dto = json_data.get('descriptorRequestDTO', {})
+        connection_dto = descriptor_dto.get('connectionDTO', {})
+        tableBean = descriptor_dto.get('tableBean', {})
         file_path = connection_dto.get('filePath')
         file_path = file_path + '/' + tableBean.get('name')
         connection_type = connection_dto.get('connectionType')
@@ -52,7 +53,7 @@ class DescriptorService:
             csv_files = FileReaderUtils.get_local_csv_files(request_dto.get('file_path'))
 
         execute = Processor(request_dto.get('file_path'), process_id)
-        combined_metadata = execute.execute_process(csv_files, request_dto)
+        combined_metadata = execute.execute_process(csv_files, request_dto, ftp)
         json_str = json.dumps(combined_metadata, indent=2)
 
         if sftp is not None:

@@ -1,22 +1,18 @@
 import json
 import logging
 import os
+import sys
 import time
-import psycopg2
-import sqlalchemy as sql
-import dask.dataframe as dd
-import duckdb as duckdb
-import pandas as pd
 import dask.bag as db
 import dask
-import sys
-
+import dask.dataframe as dd
+import psycopg2
+import sqlalchemy as sql
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
+from descriptor.service.MetadataProcessor import MetadataProcessor
 from persistence.ProcessResults import ProcessResult
-from descriptor.bean.TableBean import TableBean
-from descriptor.bean.ColumnBean import ColumnBean
-from sqlalchemy.ext.declarative import declarative_base
 
 dask.config.set(scheduler='threads')
 
@@ -25,24 +21,23 @@ logging.basicConfig(level=logging.INFO)
 
 Base = declarative_base()
 
+
 class Processor:
     def __init__(self, file_path, process_id):
         self.file_path = file_path
         self.process_id = process_id
         self.engine = None  # Remove global variable
 
-    def execute_process(self, remote_files, request_dto):
+    def execute_process(self, remote_files, request_dto, ftp):
         logging.info("starting process %s", self.process_id)
         logging.info("starting to read csv file")
 
         chunk_size = 100000000
 
-        updated_metadata = dask.compute(*self.read_csv(remote_files, chunk_size, request_dto.get('connection_type')))
-
-        combined_metadata = self.combine_metadata(updated_metadata)
+        updated_metadata = self.read_csv(remote_files, chunk_size, request_dto.get('connection_type'), ftp)
 
         logging.info("Completed")
-        return combined_metadata
+        return updated_metadata
 
     def end_process(self, json_list):
         output_format = "{time}_{process_id}.json"
@@ -73,91 +68,38 @@ class Processor:
         session.commit()
         return output_path
 
+    def read_csv(self, files, chunk_size, connection_type, ftp):
+        files_bag = db.from_sequence(files)
+        delayed_tasks = files_bag.map(
+            lambda file: dask.delayed(self._process_file)(file, chunk_size, connection_type, ftp).compute()
+        )
+        combined_metadata = dask.compute(*delayed_tasks)
+
+        return Processor.combine_metadata(combined_metadata)
+
     @staticmethod
-    def generate_metadata(csv_data, schema_name, table_name):
-        if csv_data is None:
-            logging.error("CSV data is None. Unable to generate metadata.")
-            return None
-
-        column_beans = []
-        is_all_alphabet: bool
-
+    @dask.delayed
+    def _process_file(file, chunk_size, connection_type, ftp):
         try:
-            for column in csv_data.columns:
-                distinct_row_count = len(csv_data[column].unique())
-                null_row_count = csv_data[column].isnull().sum().compute().item()
-                all_numeric = all(pd.to_numeric(csv_data[column], errors='coerce').notna())
-                is_all_alphabet = all(isinstance(s, str) and s.isalpha() for s in csv_data[column].dropna())
+            block_size_gb = 1
+            block_size_bytes = block_size_gb * 1024 ** 3
 
-                unique_count = len(csv_data[column].unique())
-                is_primary_key = unique_count == len(csv_data)
-
-                is_date_column = False
-
-                data_type = str(csv_data[column].dtypes)
-                if data_type in ['object', 'string']:
-                    df = duckdb.from_df(csv_data)
-                    data_type = str(df[column].dtypes)
-                    if data_type in ['DATE', 'DATE_TIME', 'TIME']:
-                        is_date_column = True
-
-                is_length_uniform = csv_data[column].str.len().nunique() == 1
-                type_length = csv_data[column].astype(str).apply(len).max()
-                column_beans.append(
-                    ColumnBean(column, data_type, distinct_row_count, null_row_count, all_numeric, is_all_alphabet,
-                               is_primary_key, is_date_column, is_length_uniform, int(type_length)))
-        except Exception as e:
-            logging.error(f"Error generating metadata: {e}", exc_info=True)
-            return None
-
-        column_count = len(csv_data.columns)
-        row_count = len(csv_data)
-
-        table_bean = TableBean(column_count, row_count,
-                               {col: col_bean for col, col_bean in zip(csv_data.columns, column_beans)}, schema_name,
-                               table_name)
-
-        return table_bean
-
-    def read_csv(self, files, chunk_size, connection_type):
-        return [dask.delayed(self._process_file)(file, chunk_size, connection_type) for file in files]
-
-    def _process_file(self, file, chunk_size, connection_type):
-        try:
             if connection_type == 'SFTP':
                 file_size = file.stat().st_size
             elif connection_type == 'Local Storage':
                 file_size = os.path.getsize(file)
+            elif connection_type == 'FTP':
+                file_size = ftp.size(file)
             else:
                 logging.warning("Unsupported connection type: %s", connection_type)
                 return None
 
-            num_chunks = file_size // chunk_size + 1
-
-            delayed_dask_chunks = dask.delayed(dd.read_csv)(
-                file, blocksize=chunk_size, assume_missing=True, dtype='object'
-            )
+            data_frame = dd.read_csv(file, assume_missing=True, dtype='object', blocksize=block_size_bytes)
             logging.info("File reading completed")
 
-            delayed_metadata_list = []
-            for i in range(num_chunks):
-                delayed_chunk_data = delayed_dask_chunks.get_partition(i)
+            metadata = MetadataProcessor.generate_metadata(data_frame, 'schema_name', 'table_name')
 
-                try:
-                    delayed_metadata = dask.delayed(self.generate_metadata)(
-                        delayed_chunk_data, 'schema_name', 'table_name'
-                    )
-                    delayed_metadata_list.append(delayed_metadata)
-                except Exception as e:
-                    logging.error(f"Error generating metadata for chunk {i}: {e}", exc_info=True)
-
-            try:
-                updated_metadata_list = dask.compute(*delayed_metadata_list)
-                combined_metadata = self.combine_metadata(updated_metadata_list)
-                return combined_metadata
-            except Exception as e:
-                logging.error(f"Error combining metadata: {e}", exc_info=True)
-                return None
+            return metadata
 
         except UnicodeDecodeError as e:
             logging.error(f"Error decoding file: {file}. {e}")
@@ -166,13 +108,8 @@ class Processor:
             logging.error(f"Error processing file: {file}. {e}", exc_info=True)
             return None
 
-
-
-
-
-    def _process_chunk(self, i, delayed_dask_chunks):
-        delayed_chunk_data = delayed_dask_chunks.get_partition(i)
-        return dask.delayed(self.generate_metadata)(delayed_chunk_data, 'schema_name', 'table_name')
+    def calculate_partitions(self, file_size, chunk_size):
+        return (file_size + chunk_size - 1) // chunk_size
 
     @staticmethod
     def combine_metadata(updated_metadata):
@@ -188,8 +125,7 @@ class Processor:
 
         return combined_metadata
 
-    @staticmethod
-    def updateMetadata(updated_metadata, metadata):
+    def updateMetadata(self, updated_metadata, metadata):
         if updated_metadata is None or metadata is None:
             logging.warning("Updated metadata or metadata is None. Unable to update.")
             return
