@@ -3,7 +3,7 @@ import random
 from flask import Flask, request, jsonify, current_app
 
 from crawler.bean.RequestDTO import CrawlFlatfileRequestDTO
-from crawler.service import processFlatfile
+from crawler.service import processFlatfile,dataframe_comparison
 from crawler.status_monitoring.staus_monitoring import Process_monitoring
 
 app = Flask(__name__)
@@ -43,11 +43,12 @@ def check_status(processId):
     return jsonify({'status': process.status})
 
 
-# @app.route('/process_details/<int:process_id>', methods=['GET'])
-# def get_combination_result(processId):
-#
-#
-# # access the list of combination dto(RETURN LIST OF DTO )
+@app.route('/process_details/<int:process_id>', methods=['GET'])
+def get_combination_result(processId):
+    if processId:
+        result = dataframe_comparison.get_combination_result(processId)
+    return jsonify(result)
+
 
 
 if __name__ == "__main__":
