@@ -4,8 +4,7 @@ import numpy as np
 from dask import delayed
 import dask.dataframe as dd
 from crawler.bean.EnumClass import AccuracyLevel, PropertiesBean, ApprovalStatus
-from crawler.bean.RequestDTO import CurrentWorkingCombinationFF, CrawlFlatfileRequestDTO, \
-    FlatFileMatchingResultResponseDTO
+from crawler.bean.RequestDTO import CurrentWorkingCombinationFF, CrawlFlatfileRequestDTO
 from crawler.status_monitoring.staus_monitoring import Process_monitoring
 
 
