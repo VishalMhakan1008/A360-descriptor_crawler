@@ -121,5 +121,7 @@ def process_chunk(df1_chunk, df2_chunk, first_df, num_partitions1, num_partition
 def get_combination_result(process_id):
     try:
         value = final_result[process_id]
+        return value
     except KeyError:
-        ("Key does not exist in the dictionary.")
+        raise KeyError("invalid key")
+
