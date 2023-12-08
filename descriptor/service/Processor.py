@@ -1,7 +1,5 @@
 import json
-import logging
 import os
-import sys
 import time
 import dask.bag as db
 import dask
@@ -13,30 +11,28 @@ from sqlalchemy.orm import sessionmaker
 
 from descriptor.service.MetadataProcessor import MetadataProcessor
 from persistence.ProcessResults import ProcessResult
+from utils.LogUtility import LogUtility
 
 dask.config.set(scheduler='threads')
-
-sys.setrecursionlimit(10 ** 6)
-logging.basicConfig(level=logging.INFO)
-
 Base = declarative_base()
 
 
 class Processor:
+    log_utility = LogUtility()
+
     def __init__(self, file_path, process_id):
         self.file_path = file_path
         self.process_id = process_id
-        self.engine = None  # Remove global variable
+        self.engine = None
 
     def execute_process(self, remote_files, request_dto, ftp):
-        logging.info("starting process %s", self.process_id)
-        logging.info("starting to read csv file")
+        Processor.log_utility.log_info(f"Starting process {self.process_id}")
+        Processor.log_utility.log_info("Starting to read CSV file")
 
         chunk_size = 100000000
-
         updated_metadata = self.read_csv(remote_files, chunk_size, request_dto.get('connection_type'), ftp)
 
-        logging.info("Completed")
+        Processor.log_utility.log_info("Completed")
         return updated_metadata
 
     def end_process(self, json_list):
@@ -54,9 +50,9 @@ class Processor:
         try:
             self.engine = sql.create_engine(connection_str, module=psycopg2)
             with self.engine.connect() as connection_str:
-                logging.info('Successfully connected to the PostgreSQL database')
+                Processor.log_utility.log_info('Successfully connected to the PostgreSQL database')
         except Exception as ex:
-            logging.error(f'Failed to connect: {ex}')
+            Processor.log_utility.log_error(f'Failed to connect: {ex}')
 
         Base.metadata.create_all(self.engine)
 
@@ -71,11 +67,11 @@ class Processor:
     def read_csv(self, files, chunk_size, connection_type, ftp):
         files_bag = db.from_sequence(files)
         delayed_tasks = files_bag.map(
-            lambda file: dask.delayed(self._process_file)(file, chunk_size, connection_type, ftp).compute()
+            lambda file: dask.delayed(self._process_file)(file, chunk_size, connection_type, ftp)
         )
         combined_metadata = dask.compute(*delayed_tasks)
 
-        return Processor.combine_metadata(combined_metadata)
+        return Processor.merge_metadata(combined_metadata)
 
     @staticmethod
     @dask.delayed
@@ -91,51 +87,36 @@ class Processor:
             elif connection_type == 'FTP':
                 file_size = ftp.size(file)
             else:
-                logging.warning("Unsupported connection type: %s", connection_type)
+                Processor.log_utility.log_warning(f"Unsupported connection type: {connection_type}")
                 return None
 
             data_frame = dd.read_csv(file, assume_missing=True, dtype='object', blocksize=block_size_bytes)
-            logging.info("File reading completed")
+            Processor.log_utility.log_info("File reading completed")
 
             metadata = MetadataProcessor.generate_metadata(data_frame, 'schema_name', 'table_name')
 
             return metadata
 
         except UnicodeDecodeError as e:
-            logging.error(f"Error decoding file: {file}. {e}")
+            Processor.log_utility.log_error(f"Error decoding file: {file}. {e}")
             return None
         except Exception as e:
-            logging.error(f"Error processing file: {file}. {e}", exc_info=True)
+            Processor.log_utility.log_error(f"Error processing file: {file}. {e}")
             return None
 
     def calculate_partitions(self, file_size, chunk_size):
         return (file_size + chunk_size - 1) // chunk_size
 
     @staticmethod
-    def combine_metadata(updated_metadata):
-        if updated_metadata is None:
-            logging.warning("Updated metadata is None. Unable to combine.")
+    def merge_metadata(updated_metadata_list):
+        if not updated_metadata_list:
+            Processor.log_utility.log_warning("List of updated metadata is empty. Unable to combine.")
             return None
+        combined_metadata = [updated_metadata_list[0].to_dict()]
 
-        combined_metadata = []
-        for metadata in updated_metadata:
+        for metadata in updated_metadata_list[1:]:
             if metadata is not None:
                 metadata_dict = metadata.to_dict()
                 combined_metadata.append(metadata_dict)
 
         return combined_metadata
-
-    def updateMetadata(self, updated_metadata, metadata):
-        if updated_metadata is None or metadata is None:
-            logging.warning("Updated metadata or metadata is None. Unable to update.")
-            return
-
-        updated_metadata.row_count += metadata.row_count
-        for column_name, column_metadata in metadata.columns.items():
-            if column_name in updated_metadata.columns:
-                updated_metadata.columns[column_name].distinct_row_count += column_metadata.distinct_row_count
-                updated_metadata.columns[column_name].null_row_count += column_metadata.null_row_count
-                updated_metadata.columns[column_name].type_length = max(
-                    updated_metadata.columns[column_name].type_length,
-                    column_metadata.type_length
-                )

@@ -4,19 +4,21 @@ import dask
 import duckdb
 import numpy as np
 import pandas as pd
-
+import concurrent.futures
 from descriptor.bean.ColumnBean import ColumnBean
 from descriptor.bean.DatabaseCommonMethods import DatabaseCommonMethods
 from descriptor.bean.TableBean import TableBean
 from descriptor.bean.enum.PortfolioConstants import PortfolioConstants
+from utils.LogUtility import LogUtility
 
 
 class MetadataProcessor:
+    log_utility = LogUtility()
 
     @staticmethod
     def generate_metadata(csv_data, schema_name, table_name):
         if csv_data is None:
-            logging.error("CSV data is None. Unable to generate metadata.")
+            MetadataProcessor.log_utility.log_error("CSV data is None. Unable to generate metadata.")
             return None
 
         column_beans = []
@@ -48,8 +50,76 @@ class MetadataProcessor:
             return table_bean
 
         except Exception as e:
-            logging.error(f"Error generating metadata: {e}", exc_info=True)
+            MetadataProcessor.log_utility.log_error(f"Error generating metadata: {e}")
             return None
+
+    @staticmethod
+    def get_probable_primary_columns(column_beans, row_count, table_name):
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = []
+            for column in column_beans:
+                futures.append(
+                    executor.submit(
+                        MetadataProcessor.probable_primary_key, column, row_count, table_name
+                    )
+                )
+
+            concurrent.futures.wait(futures)
+
+        primary_keys = [future.result() for future in futures if future.result() is not None]
+        return len(primary_keys)
+
+    @staticmethod
+    def probable_primary_key(column, row_count, table_name):
+        column.probable_primary = False
+        column.is_unique_key = False
+        column.probable_primary_for_crawl = False
+
+        if column.distinct_row_count is not None and column.distinct_row_count != -1:
+            try:
+                num_of_nulls = column.null_row_count
+                if (
+                        num_of_nulls != -1
+                        and row_count - column.distinct_row_count
+                        <= PortfolioConstants.ACCEPTED_DUPLICATION_PERCENTAGE_CRAWL.value
+                        * row_count
+                        / 100
+                        and num_of_nulls
+                        <= PortfolioConstants.ACCEPTED_NULL_RECORDS_PERCENTAGE_CRAWL.value
+                        * row_count
+                        / 100
+                ):
+                    column.probable_primary_for_crawl = True
+            except Exception as ex:
+                MetadataProcessor.log_utility.log_warning(f"Exception in GetPrimaryColumns in Table ::  {table_name}",
+                                                          ex)
+
+            if column.primary_key:
+                return None
+
+            if MetadataProcessor.to_skip_for_primary_cols(column):
+                return None
+
+            try:
+                num_of_nulls = column.null_row_count
+                if (
+                        num_of_nulls != -1
+                        and row_count - column.distinct_row_count
+                        <= PortfolioConstants.ACCEPTED_DUPLICATION_PERCENTAGE.value
+                        * row_count
+                        / 100
+                        and num_of_nulls
+                        <= PortfolioConstants.ACCEPTED_NULL_RECORDS_PERCENTAGE.value
+                        * row_count
+                        / 100
+                ):
+                    if column.data_type == "DATE" or column.data_type == "TIME":
+                        column.is_unique_key = True
+                    else:
+                        column.probable_primary = True
+            except Exception as ex:
+                MetadataProcessor.log_utility.log_error(
+                    f"Exception in GetPrimaryColumns in Table ::  {table_name}" + ex)
 
     @staticmethod
     def process_column(pandas_column, column):
@@ -91,10 +161,11 @@ class MetadataProcessor:
                             is_high_frequency_char = True
                             high_frequency_char_data = col_datum
                     else:
-                        print("Invalid type for col_datum:", type(col_datum))
+                        MetadataProcessor.log_utility.log_error(
+                            "Invalid type for col_datum: {}".format(type(col_datum)))
 
         except Exception as e:
-            logging.error(f"Error generating metadata: {e}", exc_info=True)
+            MetadataProcessor.log_utility.log_error(f"Error generating metadata: {e}")
             return None
 
         return ColumnBean(column, data_type, distinct_row_count, null_row_count, all_numeric, is_all_alphabet,
@@ -116,65 +187,6 @@ class MetadataProcessor:
     def get_primary_key_size(column_beans):
         primary_key_count = sum(column.primary_key for column in column_beans)
         return primary_key_count
-
-    @staticmethod
-    def get_probable_primary_columns(column_beans, row_count, table_name):
-        primary_keys = []
-
-        for column in column_beans:
-            column.probable_primary = False
-            column.is_unique_key = False
-            column.probable_primary_for_crawl = False
-
-            if column.distinct_row_count is not None and column.distinct_row_count != -1:
-                try:
-                    num_of_nulls = column.null_row_count
-                    if (
-                            num_of_nulls != -1
-                            and row_count - column.distinct_row_count
-                            <= PortfolioConstants.ACCEPTED_DUPLICATION_PERCENTAGE_CRAWL.value
-                            * row_count
-                            / 100
-                            and num_of_nulls
-                            <= PortfolioConstants.ACCEPTED_NULL_RECORDS_PERCENTAGE_CRAWL.value
-                            * row_count
-                            / 100
-                    ):
-                        column.probable_primary_for_crawl = True
-                except Exception as ex:
-                    logging.warning(f"Exception in GetPrimaryColumns in Table ::  {table_name}", ex)
-
-                if column.primary_key:
-                    continue
-
-                if MetadataProcessor.to_skip_for_primary_cols(column):
-                    continue
-
-                try:
-                    num_of_nulls = column.null_row_count
-                    if (
-                            num_of_nulls != -1
-                            and row_count - column.distinct_row_count
-                            <= PortfolioConstants.ACCEPTED_DUPLICATION_PERCENTAGE.value
-                            * row_count
-                            / 100
-                            and num_of_nulls
-                            <= PortfolioConstants.ACCEPTED_NULL_RECORDS_PERCENTAGE.value
-                            * row_count
-                            / 100
-                    ):
-                        if (
-                                column.data_type == "DATE"
-                                or column.data_type == "TIME"
-                        ):
-                            column.is_unique_key = True
-                        else:
-                            primary_keys.append(column)
-                            column.probable_primary = True
-                except Exception as ex:
-                    logging.error(f"Exception in GetPrimaryColumns in Table ::  {table_name}", ex)
-
-        return len(primary_keys)
 
     @staticmethod
     def max_occuring_char(s):

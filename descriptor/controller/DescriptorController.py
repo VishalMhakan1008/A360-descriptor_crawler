@@ -1,12 +1,12 @@
 import os
 import random
 import dask
-from dask.distributed import wait
-from dask.distributed import Client
+from dask.distributed import wait, Client
 from flask import Flask, request, jsonify
 from descriptor.bean.Process import Process
 from descriptor.service.DescriptorService import DescriptorService
 from utils.CommonConnectionUtils import CommonConnectionUtils
+from utils.LogUtility import LogUtility
 
 dask.config.set(scheduler='debug')
 
@@ -16,13 +16,16 @@ if __name__ == '__main__':
     client = Client()
     app = Flask(__name__)
 
+    log_utility = LogUtility()
 
     @app.route('/status', methods=['GET'])
     def status_table():
         json_data = request.get_json()
         process_id = json_data.get('process_id', None)
         if process_id is None:
-            print()
+            log_utility.log_warning("Invalid request for status with no process_id")
+            return jsonify({'error': 'Invalid request'})
+
         host = 'localhost'
         port = '5434'
         database = 'postgres'
@@ -36,8 +39,8 @@ if __name__ == '__main__':
             finally:
                 CommonConnectionUtils.close_connection(connection)
         else:
-            return None
-
+            log_utility.log_error("Failed to establish PostgreSQL connection.")
+            return jsonify({'error': 'Failed to connect to the database'})
 
     @app.route('/process_table', methods=['POST'])
     def process_table():
@@ -55,13 +58,13 @@ if __name__ == '__main__':
         wait([fut])
         result = fut.result()
         status = fut.status
-        print(f"Task status: {status}")
+
+        log_utility.log_info(f"Task status: {status}")
 
         if status == 'error':
             exception_info = client.get_task_exception(fut.key)
-            print(f"Exception info: {exception_info}")
+            log_utility.log_error(f"Exception info: {exception_info}")
 
         return jsonify({'process_id': process_id, 'result': result})
-
 
     app.run(debug=True, use_reloader=False)

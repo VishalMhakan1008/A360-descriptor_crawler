@@ -1,12 +1,13 @@
 from descriptor.service.Processor import Processor
 from utils.CommonConnectionUtils import CommonConnectionUtils
 from utils.FileReaderUtils import FileReaderUtils
+from utils.LogUtility import LogUtility
 import json
 import time
-import logging
 
 
 class DescriptorService:
+    log_utility = LogUtility()
 
     @staticmethod
     def get_request_dto_from_json(json_data):
@@ -70,8 +71,8 @@ class DescriptorService:
             process.result_path = output_path
             processes[process_id] = process
             process.update_status()
-            logging.info(process.to_dict_result())
+            DescriptorService.log_utility.log_info(f"Process status: {process.status} for process_id:{process_id}")
         else:
-            print(f"Process with ID {process_id} not found.")
+            DescriptorService.log_utility.log_error(f"Process with ID {process_id} not found.")
 
         return json_str
