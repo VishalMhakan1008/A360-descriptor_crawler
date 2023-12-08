@@ -9,9 +9,9 @@ import sqlalchemy as sql
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-from descriptor.service.MetadataProcessor import MetadataProcessor
-from persistence.ProcessResults import ProcessResult
-from utils.LogUtility import LogUtility
+from src.main.a360_data_compute.descriptor.service.MetadataProcessor import MetadataProcessor
+from src.main.a360_data_compute.persistence.ProcessResults import ProcessResult
+from src.main.a360_data_compute.utils.LogUtility import LogUtility
 
 dask.config.set(scheduler='threads')
 Base = declarative_base()

@@ -1,7 +1,7 @@
-from descriptor.service.Processor import Processor
-from utils.CommonConnectionUtils import CommonConnectionUtils
-from utils.FileReaderUtils import FileReaderUtils
-from utils.LogUtility import LogUtility
+from src.main.a360_data_compute.descriptor.service.Processor import Processor
+from src.main.a360_data_compute.utils.CommonConnectionUtils import CommonConnectionUtils
+from src.main.a360_data_compute.utils.FileReaderUtils import FileReaderUtils
+from src.main.a360_data_compute.utils.LogUtility import LogUtility
 import json
 import time
 

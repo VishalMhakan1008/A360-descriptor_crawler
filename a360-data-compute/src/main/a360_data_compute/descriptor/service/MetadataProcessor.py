@@ -1,15 +1,16 @@
-import logging
+import concurrent.futures
 from collections import defaultdict
+
 import dask
 import duckdb
 import numpy as np
 import pandas as pd
-import concurrent.futures
-from descriptor.bean.ColumnBean import ColumnBean
-from descriptor.bean.DatabaseCommonMethods import DatabaseCommonMethods
-from descriptor.bean.TableBean import TableBean
-from descriptor.bean.enum.PortfolioConstants import PortfolioConstants
-from utils.LogUtility import LogUtility
+
+from src.main.a360_data_compute.descriptor.bean.ColumnBean import ColumnBean
+from src.main.a360_data_compute.descriptor.bean.DatabaseCommonMethods import DatabaseCommonMethods
+from src.main.a360_data_compute.descriptor.bean.TableBean import TableBean
+from src.main.a360_data_compute.descriptor.bean.enum.PortfolioConstants import PortfolioConstants
+from src.main.a360_data_compute.utils.LogUtility import LogUtility
 
 
 class MetadataProcessor:

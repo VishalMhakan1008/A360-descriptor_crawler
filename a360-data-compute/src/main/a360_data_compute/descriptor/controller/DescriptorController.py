@@ -3,10 +3,10 @@ import random
 import dask
 from dask.distributed import wait, Client
 from flask import Flask, request, jsonify
-from descriptor.bean.Process import Process
-from descriptor.service.DescriptorService import DescriptorService
-from utils.CommonConnectionUtils import CommonConnectionUtils
-from utils.LogUtility import LogUtility
+from src.main.a360_data_compute.descriptor.bean.Process import Process
+from src.main.a360_data_compute.descriptor.service.DescriptorService import DescriptorService
+from src.main.a360_data_compute.utils.CommonConnectionUtils import CommonConnectionUtils
+from src.main.a360_data_compute.utils.LogUtility import LogUtility
 
 dask.config.set(scheduler='debug')
 

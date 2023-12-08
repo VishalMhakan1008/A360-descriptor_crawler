@@ -9,9 +9,11 @@ class LogUtility:
         if not os.path.exists(log_directory):
             os.makedirs(log_directory)
 
+        #file handler
         fh = logging.FileHandler(log_file_path)
         fh.setLevel(logging.DEBUG)
 
+        #Stream Handler
         ch = logging.StreamHandler()
         ch.setLevel(logging.DEBUG)
 
