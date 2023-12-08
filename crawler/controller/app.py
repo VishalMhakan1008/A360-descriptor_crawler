@@ -1,3 +1,4 @@
+import json
 import random
 
 from flask import Flask, request, jsonify, current_app
@@ -15,6 +16,7 @@ def generate_processId():
     process_id = random.randrange(1000, 1000000)
     process = Process_monitoring(process_id, 'NOT_STARTED')
     temp_object[process_id] = process
+    print(temp_object)
     return jsonify({'processId': process_id})
 
 
@@ -22,9 +24,9 @@ def generate_processId():
 def processCrawling():
     try:
         dtos_data = request.get_json()
-        process_id = dtos_data['process_id']
-        process = Process_monitoring(process_id, 'IN_PROGRESS')
-        temp_object[process_id] = process
+        process_id = int(dtos_data['processId'])
+        process = temp_object[process_id]
+        process.status = "IN_PROGRESS"
         request_dto = CrawlFlatfileRequestDTO(**dtos_data)
         processFlatfile.startCrawling(request_dto, temp_object)
         current_app.logger.info("Crawling done!")
@@ -34,7 +36,7 @@ def processCrawling():
     return jsonify({'processStatus': process.status})
 
 
-@app.route('/process_status/<int:process_id>', methods=['GET'])
+@app.route('/process_status/<int:processId>', methods=['GET'])
 def check_status(processId):
     if processId not in temp_object:
         return jsonify({'error': 'Process not found'}), 404
@@ -43,10 +45,9 @@ def check_status(processId):
     return jsonify({'status': process.status})
 
 
-@app.route('/process_details/<int:process_id>', methods=['GET'])
+@app.route('/process_details/<int:processId>', methods=['GET'])
 def get_combination_result(processId):
-    if processId:
-        result = dataframe_comparison.get_combination_result(processId)
+    result = dataframe_comparison.get_combination_result(processId)
     return jsonify(result)
 
 

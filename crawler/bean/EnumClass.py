@@ -7,19 +7,19 @@ class PropertiesBean(Enum):
 
 
 class ApprovalStatus(Enum):
-    APPROVED = "APPROVED"
-    PENDING = "PENDING"
-    REJECTED = "REJECTED"
+    APPROVED = 'APPROVED'
+    PENDING = 'PENDING'
+    REJECTED = 'REJECTED'
 
 
 class AccuracyLevel(Enum):
-    HIGH = "HIGH"
-    MEDIUM = "MEDIUM"
-    LOW = "LOW"
-    NOT_RELATED = "NOT_RELATED"
+    HIGH = 'HIGH'
+    MEDIUM = 'MEDIUM'
+    LOW = 'LOW'
+    NOT_RELATED = 'NOT_RELATED'
 
 
 class ConnectionType(Enum):
-    LOCAL = "Local Storage"
-    SFTP = "sftp"
-    FTP = "ftp"
+    LOCAL = 'Local_Storage'
+    SFTP = 'sftp'
+    FTP = 'ftp'

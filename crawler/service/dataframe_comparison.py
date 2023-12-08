@@ -1,7 +1,6 @@
 import os
 
-import numpy as np
-from dask import delayed
+
 import dask.dataframe as dd
 from crawler.bean.EnumClass import AccuracyLevel, PropertiesBean, ApprovalStatus
 from crawler.bean.RequestDTO import CurrentWorkingCombinationFF, CrawlFlatfileRequestDTO
@@ -29,7 +28,8 @@ def getApprovalStatus(confidenceScore):
 
 
 def getting_matching_result(column1, column2):
-    matching = np.isin(column1, column2)
+    #checking
+    matching = dd.DataFrame.isin(column1, column2)
     return matching
 
 

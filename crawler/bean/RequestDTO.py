@@ -2,21 +2,18 @@ import json
 
 
 class CurrentWorkingCombinationFF:
-    def __init__(self, taskId, connectionType, schemaName1, tablePath1, tableName1, columnName1, column1ID, schema1ID,
-                 schemaName2, databaseName2, tablePath2, tableName2, columnName2, column2Id, schema2Id,
+    def __init__(self, taskId, connectionType, tablePath1, tableName1, columnName1, column1ID, schema1ID,
+                 tablePath2, tableName2, columnName2, column2Id, schema2Id,
                  fileFormat, userName, password, host, port, ignoreQuotations, quoteCharacter, withStrictQuotes,
                  delimiter):
         self.taskId = taskId
         self.connectionType = connectionType
-        self.schemaName1 = schemaName1
         self.tablePath1 = tablePath1
         self.tableName1 = tableName1
         self.columnName1 = columnName1
         self.column1Id = column1ID
         self.schema1Id = schema1ID
 
-        self.schemaName2 = schemaName2
-        self.databaseName2 = databaseName2
         self.tablePath2 = tablePath2
         self.tableName2 = tableName2
         self.columnName2 = columnName2
@@ -37,9 +34,8 @@ class CurrentWorkingCombinationFF:
 class CrawlFlatfileRequestDTO:
     def __init__(self, type, processId, currentWorkingCombinationFF):
         self.type = type
-        self.processId = processId
+        self.processId = int(processId)
         self.currentWorkingCombinationFF = [CurrentWorkingCombinationFF(**item) for item in currentWorkingCombinationFF]
-
 
 # class CrawlFlatfileResponseDTO:
 #     def __init__(self, processId, flatfileMatchingResultResponse):
