@@ -1,7 +1,7 @@
-from crawler.bean.EnumClass import ConnectionType
-from crawler.bean.RequestDTO import CrawlFlatfileRequestDTO, CurrentWorkingCombinationFF
-from crawler.service.dataframe_comparison import execute_combinations
-from utils.FileReading import read_local_csv
+from src.main.a360_data_compute.crawler.bean.EnumClass import ConnectionType
+from src.main.a360_data_compute.crawler.bean.RequestDTO import CrawlFlatfileRequestDTO, CurrentWorkingCombinationFF
+from src.main.a360_data_compute.crawler.service.dataframe_comparison import execute_combinations
+from src.main.a360_data_compute.utils.FileReading import read_local_csv
 
 
 def process_flatFile(crawl_flatfile_DTO: CrawlFlatfileRequestDTO, temp_object):

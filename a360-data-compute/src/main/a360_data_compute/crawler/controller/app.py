@@ -3,9 +3,9 @@ import random
 
 from flask import Flask, request, jsonify, current_app
 
-from crawler.bean.RequestDTO import CrawlFlatfileRequestDTO
-from crawler.service import processFlatfile,dataframe_comparison
-from crawler.status_monitoring.staus_monitoring import Process_monitoring
+from src.main.a360_data_compute.crawler.bean.RequestDTO import CrawlFlatfileRequestDTO
+from src.main.a360_data_compute.crawler.service import processFlatfile,dataframe_comparison
+from src.main.a360_data_compute.crawler.status_monitoring.staus_monitoring import Process_monitoring
 
 app = Flask(__name__)
 temp_object = {}

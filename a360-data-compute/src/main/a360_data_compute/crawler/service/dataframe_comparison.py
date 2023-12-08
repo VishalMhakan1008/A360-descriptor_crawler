@@ -2,9 +2,9 @@ import os
 
 
 import dask.dataframe as dd
-from crawler.bean.EnumClass import AccuracyLevel, PropertiesBean, ApprovalStatus
-from crawler.bean.RequestDTO import CurrentWorkingCombinationFF, CrawlFlatfileRequestDTO
-from crawler.status_monitoring.staus_monitoring import Process_monitoring
+from src.main.a360_data_compute.crawler.bean.EnumClass import AccuracyLevel, PropertiesBean, ApprovalStatus
+from src.main.a360_data_compute.crawler.bean.RequestDTO import CurrentWorkingCombinationFF, CrawlFlatfileRequestDTO
+from src.main.a360_data_compute.crawler.status_monitoring.staus_monitoring import Process_monitoring
 
 
 def checkAccuracyLevel(reverseMatch, forwardMatch):

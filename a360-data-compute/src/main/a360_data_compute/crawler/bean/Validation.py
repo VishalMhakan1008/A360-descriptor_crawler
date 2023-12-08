@@ -1,6 +1,6 @@
 import os
 import dask.delayed
-from utils import CommonConnectionUtils as cu
+from src.main.a360_data_compute.utils import CommonConnectionUtils as cu
 
 
 @dask.delayed

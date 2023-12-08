@@ -1,7 +1,7 @@
 import dask
 
-from crawler.bean import Validation
-from crawler.service import DataFrameCreations
+from src.main.a360_data_compute.crawler.bean import Validation
+from src.main.a360_data_compute.crawler.service import DataFrameCreations
 
 
 def startCrawling(crawl_flatfile_DTO, temp_object):
