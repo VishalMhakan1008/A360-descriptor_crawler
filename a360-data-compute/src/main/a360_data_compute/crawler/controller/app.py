@@ -1,10 +1,8 @@
-import json
 import random
 
 from flask import Flask, request, jsonify, current_app
-
 from src.main.a360_data_compute.crawler.bean.RequestDTO import CrawlFlatfileRequestDTO
-from src.main.a360_data_compute.crawler.service import processFlatfile,dataframe_comparison
+from src.main.a360_data_compute.crawler.service import processFlatfile, dataframe_comparison
 from src.main.a360_data_compute.crawler.status_monitoring.staus_monitoring import Process_monitoring
 
 app = Flask(__name__)
@@ -16,7 +14,6 @@ def generate_processId():
     process_id = random.randrange(1000, 1000000)
     process = Process_monitoring(process_id, 'NOT_STARTED')
     temp_object[process_id] = process
-    print(temp_object)
     return jsonify({'processId': process_id})
 
 
@@ -27,13 +24,14 @@ def processCrawling():
         process_id = int(dtos_data['processId'])
         process = temp_object[process_id]
         process.status = "IN_PROGRESS"
+        print(dtos_data)
         request_dto = CrawlFlatfileRequestDTO(**dtos_data)
         processFlatfile.startCrawling(request_dto, temp_object)
         current_app.logger.info("Crawling done!")
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-    return jsonify({'processStatus': process.status})
+    return jsonify({'status': process.status})
 
 
 @app.route('/process_status/<int:processId>', methods=['GET'])
@@ -49,7 +47,6 @@ def check_status(processId):
 def get_combination_result(processId):
     result = dataframe_comparison.get_combination_result(processId)
     return jsonify(result)
-
 
 
 if __name__ == "__main__":

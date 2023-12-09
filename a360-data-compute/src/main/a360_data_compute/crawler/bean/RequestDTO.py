@@ -2,8 +2,8 @@ import json
 
 
 class CurrentWorkingCombinationFF:
-    def __init__(self, taskId, connectionType, tablePath1, tableName1, columnName1, column1ID, schema1ID,
-                 tablePath2, tableName2, columnName2, column2Id, schema2Id,
+    def __init__(self, taskId, connectionType, tablePath1, tableName1, columnName1, column1ID, schema1ID, table1Size,
+                 tablePath2, tableName2, columnName2, column2Id, schema2Id, table2Size,
                  fileFormat, userName, password, host, port, ignoreQuotations, quoteCharacter, withStrictQuotes,
                  delimiter):
         self.taskId = taskId
@@ -13,12 +13,14 @@ class CurrentWorkingCombinationFF:
         self.columnName1 = columnName1
         self.column1Id = column1ID
         self.schema1Id = schema1ID
+        self.table1Size = int(table1Size)
 
         self.tablePath2 = tablePath2
         self.tableName2 = tableName2
         self.columnName2 = columnName2
         self.column2Id = column2Id
         self.schema2Id = schema2Id
+        self.table2Size = int(table2Size)
 
         self.fileFormat = fileFormat
         self.userName = userName
