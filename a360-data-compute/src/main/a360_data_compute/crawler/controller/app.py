@@ -24,7 +24,6 @@ def processCrawling():
         process_id = int(dtos_data['processId'])
         process = temp_object[process_id]
         process.status = "IN_PROGRESS"
-        print(dtos_data)
         request_dto = CrawlFlatfileRequestDTO(**dtos_data)
         processFlatfile.startCrawling(request_dto, temp_object)
         current_app.logger.info("Crawling done!")

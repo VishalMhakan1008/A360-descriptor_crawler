@@ -14,7 +14,6 @@ def process_flatFile(crawl_flatfile_DTO: CrawlFlatfileRequestDTO, temp_object):
                                       dto.delimiter,
                                       dto.quoteCharacter,
                                       dto.columnName1)
-            print(first_df.info())
             second_df = read_local_csv(dto.tablePath2,
                                        dto.delimiter,
                                        dto.quoteCharacter,

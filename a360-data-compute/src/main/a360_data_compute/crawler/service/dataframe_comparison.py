@@ -1,6 +1,6 @@
 import os
 import traceback
-
+from dask.dataframe import from_pandas
 import dask.dataframe as dd
 from src.main.a360_data_compute.crawler.bean.EnumClass import AccuracyLevel, PropertiesBean, ApprovalStatus
 from src.main.a360_data_compute.crawler.bean.RequestDTO import CurrentWorkingCombinationFF, CrawlFlatfileRequestDTO
@@ -30,10 +30,14 @@ def getApprovalStatus(confidenceScore):
         return ApprovalStatus.PENDING
 
 
-def getting_matching_result(column1, column2):
-    # checking
-    matching = dd.DataFrame.isin(column1, column2)
-    return matching
+# def getting_matching_result(column1, column2):
+#     # checking
+#     try:
+#         matching = dd.DataFrame.isin(column1, column2)
+#         return matching.compute()
+#     except Exception as e:
+#         print(f"Dask Error: {e}")
+#         return None
 
 
 def process_matching_result(matching_values, non_null_df1, non_null_df2):
@@ -59,16 +63,24 @@ def process_matching_result(matching_values, non_null_df1, non_null_df2):
     })
 
 
-def create_chunk(dataframe, table_size):
-    target_chunk_size_mb = 100
-    try:
-        num_partitions = (table_size // (target_chunk_size_mb * 1024 * 1024)) + 1
-        chunk = dataframe.repartition(npartitions=num_partitions)
-        return chunk, num_partitions
-
-    except Exception as e:
-        log_utility.log_error(f"Error during repartitioning: {e}")
-        return None
+# def create_chunk(dataframe, table_size):
+#     target_chunk_size_mb = 50
+#     try:
+#         num_partitions = (table_size // (target_chunk_size_mb * 1024 * 1024)) + 1
+#         chunked_dataframe = dataframe.repartition(npartitions=num_partitions)
+#
+#         # Extract each chunk
+#         chunks = []
+#         for partition_id in range(num_partitions):
+#             # Use get_partition to extract each partition
+#             chunk = chunked_dataframe.get_partition(partition_id).compute()
+#             chunks.append(chunk)
+#
+#         return chunks, num_partitions
+#
+#     except Exception as e:
+#         log_utility.log_error(f"Error during repartitioning: {e}")
+#         return None
 
 
 def save_combination_result(combination_result, dto: CurrentWorkingCombinationFF):
@@ -85,6 +97,62 @@ def save_combination_result(combination_result, dto: CurrentWorkingCombinationFF
 final_result = dict
 
 
+def chunk_and_process(first_df, second_df, table_size=1000000000):
+    target_chunk_size_mb = 5
+    try:
+        non_null_df1 = first_df.dropna().drop_duplicates()
+        non_null_df2 = second_df.dropna().drop_duplicates()
+
+        num_partitions_df1 = (table_size // (target_chunk_size_mb * 1024 * 1024)) + 1
+        num_partitions_df2 = (table_size // (target_chunk_size_mb * 1024 * 1024)) + 1
+        # matching data means  delete that 100 %  and matching row also removed
+        df1 = non_null_df1.repartition(npartitions=num_partitions_df1)
+        df2 = non_null_df2.repartition(npartitions=num_partitions_df2)
+
+        partitions_df1 = [df1.get_partition(partition_id) for partition_id in range(num_partitions_df1)]
+        partitions_df2 = [df2.get_partition(partition_id) for partition_id in range(num_partitions_df2)]
+
+        matching_values = []
+
+        for partition_df1 in partitions_df1:
+            for partition_df2 in partitions_df2:
+                # converting pandas
+                # pandas_df1 = partition_df1.compute()
+                # pandas_df2 = partition_df2.compute()
+                #
+                # print("pandas_df_1 row count:")
+                # print(pandas_df1.shape[0])
+                # print("pandas_df_2 row count:")
+                # print(pandas_df2.shape[0])
+                #
+                # print(pandas_df1.info())
+                # print(pandas_df2.info())
+
+                column_name_df1 = partition_df1.columns[0]
+                column_name_df2 = partition_df2.columns[0]
+
+                try:
+                    merged_df = dd.merge(partition_df1, partition_df2, how='inner', left_on=column_name_df1,
+                                         right_on=column_name_df2)
+                    computed_df = merged_df.compute()
+                    matching_count = computed_df.shape[0]
+                    print(computed_df.head())
+                    print(computed_df.info())
+                    print(matching_count)
+                    print("Matching Count:", matching_count)
+                    matching_values.append(matching_count)
+
+                    # matching_records = pandas_df1[column_name_df1].isin(pandas_df2[column_name_df2])
+                    # matching_records_count = matching_records.sum()
+                    # print("matching_records_count")
+                    # print(matching_records_count)
+                except Exception as e:
+                    print(e)
+        print(sum(matching_values))
+    except Exception as e:
+        print(f"error{e}")
+
+
 def execute_combinations(list_of_combination_final_set, temp_object: dict, crawl_flatfile_DTO: CrawlFlatfileRequestDTO):
     list_combinations_result = []
     for combination_set in list_of_combination_final_set:
@@ -92,17 +160,8 @@ def execute_combinations(list_of_combination_final_set, temp_object: dict, crawl
             dto: CurrentWorkingCombinationFF = combination_set['comb_dto']
             first_df = combination_set['first_df']
             second_df = combination_set['second_df']
-            df1_chunk, num_partitions1 = create_chunk(first_df, dto.table1Size)
-            df2_chunk, num_partitions2 = create_chunk(second_df, dto.table2Size)
-            combination_result = process_chunk(df1_chunk, df2_chunk, first_df, num_partitions1, num_partitions2,
-                                               second_df)
-            list_combinations_result.append(save_combination_result(combination_result, dto))
-        except KeyError as ke:
-            log_utility.log_error(f"The key 'dto' does not exist in the dictionary: {ke}")
-        except TypeError as te:
-            log_utility.log_error(f"Error creating CurrentWorkingCombinationFF instance: {te}")
-        except AttributeError as ae:
-            log_utility.log_error(f"CurrentWorkingCombinationFF does not have expected attributes: {ae}")
+            chunk_and_process(first_df, second_df)
+
         except Exception as e:
             log_utility.log_error(str(e))
             log_utility.log_error(traceback.format_exc())
@@ -121,19 +180,6 @@ def execute_combinations(list_of_combination_final_set, temp_object: dict, crawl
             process_obj.status = "SUCCESS"
     else:
         print("temp_object is empty.")
-
-
-def process_chunk(df1_chunk, df2_chunk, first_df, num_partitions1, num_partitions2, second_df):
-    matching_values = []
-    for i in range(num_partitions1):
-        chunk1 = df1_chunk.get_partition(i)
-        for j in range(num_partitions2):
-            chunk2 = df2_chunk.get_partition(j)
-            matching_values = getting_matching_result(chunk1, chunk2)
-    return process_matching_result(matching_values,
-                                   first_df.dropna(),
-                                   second_df.dropna()
-                                   )
 
 
 def get_combination_result(process_id):
