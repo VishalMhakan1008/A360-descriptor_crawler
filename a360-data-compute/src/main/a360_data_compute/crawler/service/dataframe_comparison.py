@@ -102,55 +102,35 @@ def chunk_and_process(first_df, second_df, table_size=1000000000):
     try:
         non_null_df1 = first_df.dropna().drop_duplicates()
         non_null_df2 = second_df.dropna().drop_duplicates()
+        var = non_null_df2.npartitions
+        print(var)
 
         num_partitions_df1 = (table_size // (target_chunk_size_mb * 1024 * 1024)) + 1
         num_partitions_df2 = (table_size // (target_chunk_size_mb * 1024 * 1024)) + 1
         # matching data means  delete that 100 %  and matching row also removed
-        df1 = non_null_df1.repartition(npartitions=num_partitions_df1)
-        df2 = non_null_df2.repartition(npartitions=num_partitions_df2)
+        df1 = non_null_df1.repartition(npartitions=16)
+        df2 = non_null_df2.repartition(npartitions=16)
 
-        partitions_df1 = [df1.get_partition(partition_id) for partition_id in range(num_partitions_df1)]
-        partitions_df2 = [df2.get_partition(partition_id) for partition_id in range(num_partitions_df2)]
+        partitions_df1 = [df1.get_partition(partition_id) for partition_id in range(16)]
+        partitions_df2 = [df2.get_partition(partition_id) for partition_id in range(16)]
 
         matching_values = []
 
         for partition_df1 in partitions_df1:
             for partition_df2 in partitions_df2:
-                # converting pandas
-                # pandas_df1 = partition_df1.compute()
-                # pandas_df2 = partition_df2.compute()
-                #
-                # print("pandas_df_1 row count:")
-                # print(pandas_df1.shape[0])
-                # print("pandas_df_2 row count:")
-                # print(pandas_df2.shape[0])
-                #
-                # print(pandas_df1.info())
-                # print(pandas_df2.info())
-
                 column_name_df1 = partition_df1.columns[0]
                 column_name_df2 = partition_df2.columns[0]
-
                 try:
                     merged_df = dd.merge(partition_df1, partition_df2, how='inner', left_on=column_name_df1,
-                                         right_on=column_name_df2)
-                    computed_df = merged_df.compute()
-                    matching_count = computed_df.shape[0]
-                    print(computed_df.head())
-                    print(computed_df.info())
-                    print(matching_count)
-                    print("Matching Count:", matching_count)
+                                         right_on=column_name_df2, )
+                    matching_count = merged_df.shape[0]
                     matching_values.append(matching_count)
-
-                    # matching_records = pandas_df1[column_name_df1].isin(pandas_df2[column_name_df2])
-                    # matching_records_count = matching_records.sum()
-                    # print("matching_records_count")
-                    # print(matching_records_count)
                 except Exception as e:
                     print(e)
-        print(sum(matching_values))
+        total_matching_count = sum(matching_values)
+        print("Total Matching Count:", total_matching_count.compute())
     except Exception as e:
-        print(f"error{e}")
+        print(f"Error: {e}")
 
 
 def execute_combinations(list_of_combination_final_set, temp_object: dict, crawl_flatfile_DTO: CrawlFlatfileRequestDTO):
