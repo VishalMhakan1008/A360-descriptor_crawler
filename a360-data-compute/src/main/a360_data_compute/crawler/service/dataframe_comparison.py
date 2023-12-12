@@ -4,6 +4,8 @@ import traceback
 import dask
 from dask.dataframe import from_pandas
 import dask.dataframe as dd
+from flask import jsonify
+
 from src.main.a360_data_compute.crawler.bean.EnumClass import AccuracyLevel, PropertiesBean, ApprovalStatus
 from src.main.a360_data_compute.crawler.bean.RequestDTO import CurrentWorkingCombinationFF, CrawlFlatfileRequestDTO, \
     MatchingDTO
@@ -16,33 +18,37 @@ log_utility = LogUtility()
 
 def checkAccuracyLevel(reverseMatch, forwardMatch):
     if forwardMatch == 100.0 or reverseMatch == 100.0:
-        return AccuracyLevel.HIGH
+        return AccuracyLevel.HIGH.value
     elif forwardMatch > 80.0 or reverseMatch > 80.0:
-        return AccuracyLevel.MEDIUM
+        return AccuracyLevel.MEDIUM.value
     elif forwardMatch > 40.0 or reverseMatch > 40.0:
-        return AccuracyLevel.LOW
+        return AccuracyLevel.LOW.value
     else:
-        return AccuracyLevel.NOT_RELATED
+        return AccuracyLevel.NOT_RELATED.value
 
 
 def getApprovalStatus(confidenceScore):
     if confidenceScore < PropertiesBean.REJECTION_LIMIT.value:
-        return ApprovalStatus.REJECTED
+        return ApprovalStatus.REJECTED.value
     elif confidenceScore > PropertiesBean.APPROVAL_LIMIT.value:
-        return ApprovalStatus.APPROVED
+        return ApprovalStatus.APPROVED.value
     else:
-        return ApprovalStatus.PENDING
+        return ApprovalStatus.PENDING.value
 
 
 def process_matching_result(matching_values, table1rowCount, table2rowCount):
     try:
         if table1rowCount > 0:
-            forward_matching = (matching_values / table1rowCount) * 100
+            forward_matching_count = (matching_values / table1rowCount) * 100
+            forward_matching = round(forward_matching_count, 3)
         else:
             forward_matching = float(0.0)
 
         if table2rowCount > 0:
-            reverse_matching = (matching_values / table2rowCount) * 100
+            reverse_matching_count = (matching_values / table2rowCount) * 100
+            reverse_matching = round(reverse_matching_count, 3)
+
+
         else:
             reverse_matching = float(0.0)
 
@@ -73,7 +79,6 @@ final_result = dict
 
 
 def chunk_and_process(first_df, second_df):
-    target_chunk_size_mb = 5
     try:
         non_null_df1 = first_df.drop_duplicates()
         non_null_df2 = second_df.drop_duplicates()
@@ -96,8 +101,8 @@ def chunk_and_process(first_df, second_df):
                     matching_values.append(matching_count)
                 except Exception as e:
                     print(e)
-        total_matching_count = sum(matching_values)
-        print("Total Matching Count:", total_matching_count.compute())
+        total_matching_count = dask.compute(sum(matching_values))[0]
+        print("Total Matching Count:", total_matching_count)
         return total_matching_count
     except Exception as e:
         print(f"Error: {e}")
@@ -124,7 +129,6 @@ def execute_combinations(list_of_combination_final_set, temp_object: dict, crawl
         'processId': process_id,
         'flatFileMatchingResultResponseDTOS': list_combinations_result
     }
-    print("**finala result")
     print(result)
 
     final_result = result
@@ -137,12 +141,12 @@ def execute_combinations(list_of_combination_final_set, temp_object: dict, crawl
             process_obj.status = "SUCCESS"
 
 
-# def get_combination_result(process_id):
-#     try:
-#         value = final_result[process_id]
-#         return {
-#             'processId': process_id,
-#             'flatFileMatchingResultResponseDTOS': value
-#         }
-#     except KeyError:
-#         raise KeyError("invalid key")
+def get_combination_result(process_id):
+    try:
+        value = final_result[process_id]
+        return {
+            'processId': process_id,
+            'flatFileMatchingResultResponseDTOS': value
+        }
+    except KeyError:
+        raise KeyError("invalid key")
