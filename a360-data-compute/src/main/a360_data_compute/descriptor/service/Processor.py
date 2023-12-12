@@ -26,14 +26,60 @@ class Processor:
         self.engine = None
 
     def execute_process(self, csv_files, request_dto, ftp):
+        metadata = []
         Processor.log_utility.log_info(f"Starting process {self.process_id}")
         Processor.log_utility.log_info("Starting to read CSV file")
+        delayed_tasks = []
 
-        chunk_size = 100000000
-        updated_metadata = self.read_csv(csv_files, chunk_size, request_dto, ftp)
+        try:
+            files_bag = db.from_sequence(csv_files)
+            delayed_tasks = files_bag.map(
+                lambda file: dask.delayed(self.read_csv_file)(file, request_dto, ftp)
+            )
+        except Exception as e:
+            Processor.log_utility.log_error(f"An error occurred in read_csv: {str(e)}")
+            raise
+
+        if delayed_tasks:
+            try:
+                computed_data_frame = dask.compute(*delayed_tasks)
+                data_frames_list = list(computed_data_frame)
+                combined_data_frame = dd.concat(data_frames_list, axis=0)
+                Processor.log_utility.log_info("File reading completed")
+                table_bean = request_dto.table_bean
+                metadata.append(MetadataProcessor.generate_metadata(combined_data_frame, request_dto, table_bean).to_dict())
+
+                #merge_metadata = Processor.merge_metadata(computed_data_list)
+            except Exception as e:
+                Processor.log_utility.log_error(f"An error occurred while computing delayed tasks: {str(e)}")
+                raise
+        else:
+            Processor.log_utility.log_error("Delayed tasks list is empty")
 
         Processor.log_utility.log_info("Completed")
-        return updated_metadata
+        return metadata
+
+    @staticmethod
+    def read_csv_file(file, request_dto, ftp):
+        connection_type = request_dto.connection_dto.connection_type
+        try:
+            block_size_gb = 1
+            block_size_bytes = block_size_gb * 1024 ** 3
+            if connection_type == 'SFTP':
+                file_size = file.stat().st_size
+            elif connection_type == 'Local Storage':
+                file_size = os.path.getsize(file)
+            elif connection_type == 'FTP':
+                file_size = ftp.size(file)
+            else:
+                Processor.log_utility.log_warning(f"Unsupported connection type: {connection_type}")
+                return None
+            data_frame = dd.read_csv(file, assume_missing=True, dtype='object', blocksize=block_size_bytes)
+            return data_frame
+        except Exception as e:
+            Processor.log_utility.log_error(f"Error processing file: {file}. {e}")
+            return None
+
 
     def end_process(self, json_list):
         output_format = "{time}_{process_id}.json"
@@ -64,60 +110,6 @@ class Processor:
         session.commit()
         return output_path
 
-    def read_csv(self, csv_files, chunk_size, request_dto, ftp):
-        delayed_tasks = []
-
-        try:
-            files_bag = db.from_sequence(csv_files)
-            delayed_tasks = files_bag.map(
-                lambda file: dask.delayed(self._process_file)(file, chunk_size, request_dto, ftp)
-            )
-        except Exception as e:
-            Processor.log_utility.log_error(f"An error occurred in read_csv: {str(e)}")
-            raise
-
-        if delayed_tasks:
-            try:
-                computed_data_list = dask.compute(*delayed_tasks)
-                merge_metadata = Processor.merge_metadata(computed_data_list)
-                return merge_metadata
-            except Exception as e:
-                Processor.log_utility.log_error(f"An error occurred while computing delayed tasks: {str(e)}")
-                raise
-        else:
-            Processor.log_utility.log_error("Delayed tasks list is empty")
-
-    @staticmethod
-    @dask.delayed
-    def _process_file(file, chunk_size, request_dto, ftp):
-        connection_type = request_dto.connection_dto.connection_type
-        try:
-            block_size_gb = 1
-            block_size_bytes = block_size_gb * 1024 ** 3
-
-            if connection_type == 'SFTP':
-                file_size = file.stat().st_size
-            elif connection_type == 'Local Storage':
-                file_size = os.path.getsize(file)
-            elif connection_type == 'FTP':
-                file_size = ftp.size(file)
-            else:
-                Processor.log_utility.log_warning(f"Unsupported connection type: {connection_type}")
-                return None
-
-            data_frame = dd.read_csv(file, assume_missing=True, dtype='object', blocksize=block_size_bytes)
-            Processor.log_utility.log_info("File reading completed")
-            table_bean = request_dto.table_bean
-            metadata = MetadataProcessor.generate_metadata(data_frame, request_dto, table_bean)
-
-            return metadata
-
-        except UnicodeDecodeError as e:
-            Processor.log_utility.log_error(f"Error decoding file: {file}. {e}")
-            return None
-        except Exception as e:
-            Processor.log_utility.log_error(f"Error processing file: {file}. {e}")
-            return None
 
     def calculate_partitions(self, file_size, chunk_size):
         return (file_size + chunk_size - 1) // chunk_size

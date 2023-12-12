@@ -143,6 +143,7 @@ class MetadataProcessor:
             df = pd.DataFrame({column: pandas_column})
             duckdb_relation = duckdb.from_df(df)
             data_type = str(duckdb_relation[column].dtypes)
+            cleaned_data_type = data_type.strip('[]')
             if data_type in ['DATE', 'DATE_TIME', 'TIME']:
                 is_date_column = True
 
@@ -176,7 +177,7 @@ class MetadataProcessor:
             MetadataProcessor.log_utility.log_error(f"Error generating metadata: {e}")
             return None
 
-        return ColumnBean(column, data_type, distinct_row_count, null_row_count, all_numeric, is_all_alphabet,
+        return ColumnBean(column, cleaned_data_type, distinct_row_count, null_row_count, all_numeric, is_all_alphabet,
                           is_primary_key, is_date_column, is_length_uniform, int(type_length), is_unstructured,
                           is_high_frequency_char, high_frequency_char_data, contains_digit,
                           max_whitespace_count, probable_primary_for_crawl)
