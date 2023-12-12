@@ -2,8 +2,8 @@ from enum import Enum
 
 
 class PropertiesBean(Enum):
-    REJECTION_LIMIT = 20
-    APPROVAL_LIMIT = 80
+    REJECTION_LIMIT: float = 20
+    APPROVAL_LIMIT: float = 80.0
 
 
 class ApprovalStatus(Enum):

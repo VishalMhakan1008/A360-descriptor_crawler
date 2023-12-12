@@ -14,10 +14,12 @@ def process_flatFile(crawl_flatfile_DTO: CrawlFlatfileRequestDTO, temp_object):
                                       dto.delimiter,
                                       dto.quoteCharacter,
                                       dto.columnName1)
+
             second_df = read_local_csv(dto.tablePath2,
                                        dto.delimiter,
                                        dto.quoteCharacter,
                                        dto.columnName2)
+            print(first_df)
             data_frames_sets = {
                 "first_df": first_df,
                 "second_df": second_df,

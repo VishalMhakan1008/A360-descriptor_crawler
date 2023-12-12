@@ -49,7 +49,7 @@ def read_local_csv(table_path, delimiter, quote_char, columnName=None, header=No
     except UnicodeDecodeError as e:
         raise UnicodeDecodeError(f"Error: Unicode decoding issue - {str(e)}")
     except Exception as e:
-        traceback.print_exc()  # Print the stack trace
+        traceback.print_exc()
         raise Exception(f"An unexpected error occurred: {str(e)}")
 # def read_local_xlsx():
 #

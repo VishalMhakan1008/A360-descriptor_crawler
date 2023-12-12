@@ -3,7 +3,6 @@ import dask.delayed
 from src.main.a360_data_compute.utils import CommonConnectionUtils as cu
 
 
-@dask.delayed
 def start_validation(combinations):
     validated_combination = []
 
