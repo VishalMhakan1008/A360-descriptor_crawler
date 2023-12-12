@@ -17,7 +17,9 @@ class MetadataProcessor:
     log_utility = LogUtility()
 
     @staticmethod
-    def generate_metadata(csv_data, schema_name, table_name):
+    def generate_metadata(csv_data, request_dto, table_bean):
+        schema_name = request_dto.schema_name
+        table_name = table_bean.name
         if csv_data is None:
             MetadataProcessor.log_utility.log_error("CSV data is None. Unable to generate metadata.")
             return None
@@ -26,6 +28,11 @@ class MetadataProcessor:
         is_all_alphabet: bool
 
         try:
+            requested_columns = [column.name for column in table_bean.columns]
+
+            if requested_columns:
+                csv_data = csv_data[requested_columns]
+
             delayed_columns = [
                 dask.delayed(MetadataProcessor.process_column)(csv_data[column], column)
                 for column in csv_data.columns

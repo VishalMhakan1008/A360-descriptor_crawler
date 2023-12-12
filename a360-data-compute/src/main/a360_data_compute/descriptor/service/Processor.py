@@ -1,11 +1,11 @@
+import dask
+import dask.bag as db
+import dask.dataframe as dd
 import json
 import os
-import time
-import dask.bag as db
-import dask
-import dask.dataframe as dd
 import psycopg2
 import sqlalchemy as sql
+import time
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -25,12 +25,12 @@ class Processor:
         self.process_id = process_id
         self.engine = None
 
-    def execute_process(self, remote_files, request_dto, ftp):
+    def execute_process(self, csv_files, request_dto, ftp):
         Processor.log_utility.log_info(f"Starting process {self.process_id}")
         Processor.log_utility.log_info("Starting to read CSV file")
 
         chunk_size = 100000000
-        updated_metadata = self.read_csv(remote_files, chunk_size, request_dto.get('connection_type'), ftp)
+        updated_metadata = self.read_csv(csv_files, chunk_size, request_dto, ftp)
 
         Processor.log_utility.log_info("Completed")
         return updated_metadata
@@ -64,18 +64,33 @@ class Processor:
         session.commit()
         return output_path
 
-    def read_csv(self, files, chunk_size, connection_type, ftp):
-        files_bag = db.from_sequence(files)
-        delayed_tasks = files_bag.map(
-            lambda file: dask.delayed(self._process_file)(file, chunk_size, connection_type, ftp)
-        )
-        combined_metadata = dask.compute(*delayed_tasks)
+    def read_csv(self, csv_files, chunk_size, request_dto, ftp):
+        delayed_tasks = []
 
-        return Processor.merge_metadata(combined_metadata)
+        try:
+            files_bag = db.from_sequence(csv_files)
+            delayed_tasks = files_bag.map(
+                lambda file: dask.delayed(self._process_file)(file, chunk_size, request_dto, ftp)
+            )
+        except Exception as e:
+            Processor.log_utility.log_error(f"An error occurred in read_csv: {str(e)}")
+            raise
+
+        if delayed_tasks:
+            try:
+                computed_data_list = dask.compute(*delayed_tasks)
+                merge_metadata = Processor.merge_metadata(computed_data_list)
+                return merge_metadata
+            except Exception as e:
+                Processor.log_utility.log_error(f"An error occurred while computing delayed tasks: {str(e)}")
+                raise
+        else:
+            Processor.log_utility.log_error("Delayed tasks list is empty")
 
     @staticmethod
     @dask.delayed
-    def _process_file(file, chunk_size, connection_type, ftp):
+    def _process_file(file, chunk_size, request_dto, ftp):
+        connection_type = request_dto.connection_dto.connection_type
         try:
             block_size_gb = 1
             block_size_bytes = block_size_gb * 1024 ** 3
@@ -92,8 +107,8 @@ class Processor:
 
             data_frame = dd.read_csv(file, assume_missing=True, dtype='object', blocksize=block_size_bytes)
             Processor.log_utility.log_info("File reading completed")
-
-            metadata = MetadataProcessor.generate_metadata(data_frame, 'schema_name', 'table_name')
+            table_bean = request_dto.table_bean
+            metadata = MetadataProcessor.generate_metadata(data_frame, request_dto, table_bean)
 
             return metadata
 
@@ -108,15 +123,66 @@ class Processor:
         return (file_size + chunk_size - 1) // chunk_size
 
     @staticmethod
-    def merge_metadata(updated_metadata_list):
-        if not updated_metadata_list:
-            Processor.log_utility.log_warning("List of updated metadata is empty. Unable to combine.")
+    def merge_metadata(computed_data_list):
+        try:
+            if not computed_data_list:
+                Processor.log_utility.log_warning("List of updated metadata is empty. Unable to combine.")
+                return None
+
+            combined_metadata = [computed_data_list[0].to_dict()]
+
+            for table_bean in computed_data_list[1:]:
+                try:
+                    if table_bean is not None:
+                        for column in table_bean.columns.values():
+                            column_name = column.column_name
+                            column_found = False
+
+                            for existing_table in combined_metadata:
+                                for existing_column in existing_table["columns"]:
+                                    if existing_column["column_name"] == column_name:
+                                        existing_column["distinct_row_count"] += column.distinct_row_count
+                                        existing_column["null_row_count"] += column.null_row_count
+                                        existing_column["type_length"] = max(existing_column["type_length"], column.type_length)
+                                        existing_column["max_whitespace_count"] += column.max_whitespace_count
+                                        column_found = True
+                                        break
+
+                                if not column_found:
+                                    new_column = {
+                                        'column_name': column.column_name,
+                                        'distinct_row_count': column.distinct_row_count,
+                                        'null_row_count': column.null_row_count,
+                                        'all_numeric': column.all_numeric,
+                                        'all_alphabet': column.all_alphabet,
+                                        'primary_key': column.primary_key,
+                                        'is_date_column': column.is_date_column,
+                                        'is_length_uniform': column.is_length_uniform,
+                                        'type_length': column.type_length,
+                                        'is_unstructured': column.is_unstructured,
+                                        'is_unique_key': column.is_unique_key,
+                                        'probable_primary': column.probable_primary,
+                                        'contains_digit': column.contains_digit,
+                                        'max_whitespace_count': column.max_whitespace_count,
+                                        'probable_primary_for_crawl': column.probable_primary_for_crawl
+                                    }
+
+                                    existing_table["columns"].append(new_column)
+                                    existing_table["column_count"] += 1
+
+                        # Update other metadata for the table
+                        existing_table["row_count"] = table_bean.row_count
+                        existing_table["probable_primary_key_size"] = table_bean.probable_primary_key_size
+                        existing_table["primary_key_size"] = table_bean.primary_key_size
+
+                except Exception as table_bean_error:
+                    Processor.log_utility.log_error(f"An error occurred while processing TableBean: {str(table_bean_error)}")
+
+        except Exception as merge_metadata_error:
+            Processor.log_utility.log_error(f"An error occurred in merge_metadata: {str(merge_metadata_error)}")
             return None
-        combined_metadata = [updated_metadata_list[0].to_dict()]
 
-        for metadata in updated_metadata_list[1:]:
-            if metadata is not None:
-                metadata_dict = metadata.to_dict()
-                combined_metadata.append(metadata_dict)
+        return_data = combined_metadata
+        return return_data
 
-        return combined_metadata
+

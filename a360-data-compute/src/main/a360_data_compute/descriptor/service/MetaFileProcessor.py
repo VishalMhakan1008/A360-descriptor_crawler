@@ -8,20 +8,7 @@ from src.main.a360_data_compute.descriptor.bean.MetaTableInfoBean import MetaTab
 
 
 class MetaFileProcessor:
-    def process_metadata(self, connection_dto):
-        metadata_file_path = connection_dto.get('metadataFilePath', None)
-        connection_type = connection_dto.get('connection_type', None)
-
-        if connection_type == 'SFTP':
-            sftp = self.establish_sftp_connection(connection_dto)
-            metadata_csv_data = self.read_csv_from_sftp(sftp, metadata_file_path)
-        elif connection_type == 'FTP':
-            ftp = self.establish_ftp_connection(connection_dto)
-            metadata_csv_data = self.read_csv_from_ftp(ftp, metadata_file_path)
-        elif connection_type == 'LocalStorage':
-            metadata_csv_data = pd.read_csv(metadata_file_path)
-        else:
-            raise ValueError("Invalid connection type")
+    def process_metadata(self, column_beans_list):
 
         table_name_column_map = {}
         for index, row in metadata_csv_data.iterrows():

@@ -3,7 +3,7 @@ import logging
 
 
 class LogUtility:
-    def __init__(self, log_file_path='/Users/Platform3/Documents/AHM_DOC/pythonProject/logs/app.log'):
+    def __init__(self, log_file_path='/Users/Platform3/Documents/AHM_DOC/pythonProject/a360-data-compute/logs/app.log'):
         log_directory = os.path.dirname(log_file_path)
 
         if not os.path.exists(log_directory):

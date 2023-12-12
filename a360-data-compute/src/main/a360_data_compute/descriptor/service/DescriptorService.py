@@ -1,3 +1,7 @@
+from src.main.a360_data_compute.descriptor.bean.dto.request.ColumnDTO import ColumnDTO
+from src.main.a360_data_compute.descriptor.bean.dto.request.ConnectionDTO import ConnectionDTO
+from src.main.a360_data_compute.descriptor.bean.dto.request.DescriptorRequestDTO import DescriptorRequestDTO
+from src.main.a360_data_compute.descriptor.bean.dto.request.TableRequestDTO import TableRequestDTO
 from src.main.a360_data_compute.descriptor.service.Processor import Processor
 from src.main.a360_data_compute.utils.CommonConnectionUtils import CommonConnectionUtils
 from src.main.a360_data_compute.utils.FileReaderUtils import FileReaderUtils
@@ -11,11 +15,14 @@ class DescriptorService:
 
     @staticmethod
     def get_request_dto_from_json(json_data):
-        descriptor_dto = json_data.get('descriptorRequestDTO', {})
+        descriptor_dto = json_data.get('requestDTO', {})
         connection_dto = descriptor_dto.get('connectionDTO', {})
-        tableBean = descriptor_dto.get('tableBean', {})
+        schema_name = descriptor_dto.get('schemaName')
+        table_bean = descriptor_dto.get('tableBean', {})
+        columns_data = table_bean.get('columns', [])
+        columns = [ColumnDTO(name=column.get('name', ''), index=column.get('index', '')) for column in columns_data if column.get('name', '')]
+        table_dto = TableRequestDTO(name=table_bean.get('name', ''), columns=columns)
         file_path = connection_dto.get('filePath')
-        file_path = file_path + '/' + tableBean.get('name')
         connection_type = connection_dto.get('connectionType')
         host = connection_dto.get('host', '')
         port = connection_dto.get('port', 0)
@@ -24,36 +31,49 @@ class DescriptorService:
         delimiter = connection_dto.get('delimiter', '')
         file_format = connection_dto.get('fileFormat', '')
 
-        return {
-            'file_path': file_path,
-            'connection_type': connection_type,
-            'host': host,
-            'port': port,
-            'username': username,
-            'password': password,
-            'delimiter': delimiter,
-            'file_format': file_format
-        }
+        connection_dto_instance = ConnectionDTO(
+            file_path=file_path,
+            file_format=file_format,
+            delimiter=delimiter,
+            connection_type=connection_type,
+            metadata_file_path=connection_dto.get('metadataFilePath', ''),
+            user_name=username,
+            password=password,
+            host=host,
+            port=port,
+            ignore_quotations=connection_dto.get('ignoreQuotations', False),
+            with_strict_quotes=connection_dto.get('withStrictQuotes', False),
+            is_meta_info_available=connection_dto.get('isMetaInfoAvailable', False),
+            quote_character=connection_dto.get('quoteCharacter', '')
+        )
+
+        return DescriptorRequestDTO(
+            connection_dto=connection_dto_instance,
+            table_bean=table_dto,
+            columns=columns,
+            schema_name=schema_name
+        )
 
     @staticmethod
     def start_process(request_dto, process_id, processes):
         csv_files = []
         sftp = None
         ftp = None
+        connection_dto = request_dto.connection_dto
         process = processes[process_id]
         process.status = 'IN_PROGRESS'
-        if request_dto.get('connection_type') == 'SFTP':
-            sftp = CommonConnectionUtils.processSFTP(request_dto.username, request_dto.port, request_dto.password)
-            csv_files = FileReaderUtils.get_remote_csv_files(sftp, request_dto.file_path)
+        if connection_dto.connection_type == 'SFTP':
+            sftp = CommonConnectionUtils.processSFTP(connection_dto.username, connection_dto.port, connection_dto.password)
+            csv_files = FileReaderUtils.get_remote_csv_files(sftp, connection_dto.file_path)
 
-        elif request_dto.get('connection_type') == 'FTP':
-            ftp = CommonConnectionUtils.processFTP(request_dto.password, request_dto.port, request_dto.username)
-            csv_files = FileReaderUtils.get_remote_csv_files_for_ftp(ftp, request_dto.file_path)
+        elif connection_dto.connection_type == 'FTP':
+            ftp = CommonConnectionUtils.processFTP(connection_dto.password, connection_dto.port, connection_dto.username)
+            csv_files = FileReaderUtils.get_remote_csv_files_for_ftp(ftp, connection_dto.file_path)
 
-        elif request_dto.get('connection_type') == 'Local Storage':
-            csv_files = FileReaderUtils.get_local_csv_files(request_dto.get('file_path'))
+        elif connection_dto.connection_type == 'Local Storage':
+            csv_files = FileReaderUtils.get_local_csv_files(connection_dto.file_path)
 
-        execute = Processor(request_dto.get('file_path'), process_id)
+        execute = Processor(connection_dto.file_path, process_id)
         combined_metadata = execute.execute_process(csv_files, request_dto, ftp)
         json_str = json.dumps(combined_metadata, indent=2)
 
