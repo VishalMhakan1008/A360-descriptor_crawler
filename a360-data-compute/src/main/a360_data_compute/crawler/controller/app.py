@@ -1,7 +1,7 @@
 import random
-
+from datetime import datetime
 from flask import Flask, request, jsonify, current_app
-from src.main.a360_data_compute.crawler.bean.RequestDTO import CrawlFlatfileRequestDTO
+from src.main.a360_data_compute.crawler.bean.request_response_dtos import CrawlFlatfileRequestDTO
 from src.main.a360_data_compute.crawler.service import processFlatfile, dataframe_comparison
 from src.main.a360_data_compute.crawler.status_monitoring.staus_monitoring import Process_monitoring
 
@@ -20,17 +20,20 @@ def generate_processId():
 @app.route('/crawl-process', methods=['POST'])
 def processCrawling():
     try:
+        start_time = datetime.now()
+        print(start_time)
         dtos_data = request.get_json()
         process_id = int(dtos_data['processId'])
         process = temp_object[process_id]
         process.status = "IN_PROGRESS"
         request_dto = CrawlFlatfileRequestDTO(**dtos_data)
-        processFlatfile.startCrawling(request_dto, temp_object)
+        result_set = processFlatfile.startCrawling(request_dto, temp_object)
         current_app.logger.info("Crawling done!")
+        end_time = datetime.now()
+        print('Duration: {}'.format(end_time - start_time))
+        return jsonify(result_set)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-    return jsonify({'status': process.status})
 
 
 @app.route('/process_status/<int:processId>', methods=['GET'])
@@ -42,11 +45,14 @@ def check_status(processId):
     return jsonify({'status': process.status})
 
 
-@app.route('/process_details/<int:processId>', methods=['GET'])
-def get_combination_result(processId):
-    result = dataframe_comparison.get_combination_result(processId)
-    return jsonify(result)
+# @app.route('/process_details/<int:processId>', methods=['GET'])
+# def get_combination_result(processId):
+#     result = dataframe_comparison.get_combination_result(processId)
+#     return jsonify(result)
 
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+
+# do your work here

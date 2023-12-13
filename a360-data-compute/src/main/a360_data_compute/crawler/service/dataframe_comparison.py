@@ -1,19 +1,18 @@
 import os
 import traceback
 
-import dask
-from dask.dataframe import from_pandas
-import dask.dataframe as dd
-from flask import jsonify
-
-from src.main.a360_data_compute.crawler.bean.EnumClass import AccuracyLevel, PropertiesBean, ApprovalStatus
-from src.main.a360_data_compute.crawler.bean.RequestDTO import CurrentWorkingCombinationFF, CrawlFlatfileRequestDTO, \
+from src.main.a360_data_compute.crawler.bean.enums import AccuracyLevel, PropertiesBean, ApprovalStatus
+from src.main.a360_data_compute.crawler.bean.request_response_dtos import CurrentWorkingCombinationFF, CrawlFlatfileRequestDTO, \
     MatchingDTO
-from src.main.a360_data_compute.crawler.status_monitoring.staus_monitoring import Process_monitoring
-# from src.main.a360_data_compute.crawler.status_monitoring.staus_monitoring import Process_monitoring
+
 from src.main.a360_data_compute.utils.LogUtility import LogUtility
+from src.main.a360_data_compute.utils.data_frame_operations import get_matching_count
 
 log_utility = LogUtility()
+
+
+# cluster = LocalCluster(n_workers=4, threads_per_worker=2, memory_limit="13GB")
+# client = Client(cluster)
 
 
 def checkAccuracyLevel(reverseMatch, forwardMatch):
@@ -47,8 +46,6 @@ def process_matching_result(matching_values, table1rowCount, table2rowCount):
         if table2rowCount > 0:
             reverse_matching_count = (matching_values / table2rowCount) * 100
             reverse_matching = round(reverse_matching_count, 3)
-
-
         else:
             reverse_matching = float(0.0)
 
@@ -58,7 +55,10 @@ def process_matching_result(matching_values, table1rowCount, table2rowCount):
         dto = MatchingDTO(forward_matching, reverse_matching, accuracyLevel, approvalStatus, confidenceScore)
         return dto
     except Exception as e:
-        print(e)
+        error_msg = f"Error in process_matching_result: {str(e)}"
+        print(error_msg)
+        log_utility.log_error(error_msg)
+        log_utility.log_error(traceback.format_exc())
 
 
 def save_combination_result(match_dto: MatchingDTO, dto: CurrentWorkingCombinationFF):
@@ -71,82 +71,66 @@ def save_combination_result(match_dto: MatchingDTO, dto: CurrentWorkingCombinati
             'accuracyLevel': match_dto.accuracy_level
         }
         return result
-    except Exception as ee:
-        print(ee)
-
-
-final_result = dict
-
-
-def chunk_and_process(first_df, second_df):
-    try:
-        non_null_df1 = first_df.drop_duplicates()
-        non_null_df2 = second_df.drop_duplicates()
-        df1 = non_null_df1.repartition(npartitions=first_df.npartitions)
-        df2 = non_null_df2.repartition(npartitions=second_df.npartitions)
-        matching_values = []
-
-        for partition_df_1_id in range(first_df.npartitions):
-            temp_df_1 = df1.get_partition(partition_df_1_id)
-            for partition_df_2_id in range(second_df.npartitions):
-                temp_df_2 = df2.get_partition(partition_df_2_id)
-                column_name_df1 = temp_df_1.columns[0]
-                column_name_df2 = temp_df_2.columns[0]
-                try:
-                    merged_df = dd.merge(temp_df_1, temp_df_2, how='inner', left_on=column_name_df1,
-                                         right_on=column_name_df2, )
-                    # matching_count = temp_df_1[column_name_df1].isin(temp_df_2[column_name_df2]).sum()
-
-                    matching_count = merged_df.shape[0]
-                    matching_values.append(matching_count)
-                except Exception as e:
-                    print(e)
-        total_matching_count = dask.compute(sum(matching_values))[0]
-        print("Total Matching Count:", total_matching_count)
-        return total_matching_count
     except Exception as e:
-        print(f"Error: {e}")
+        error_msg = f"Error in save_combination_result: {str(e)}"
+        print(error_msg)
+        log_utility.log_error(error_msg)
+        log_utility.log_error(traceback.format_exc())
 
 
 def execute_combinations(list_of_combination_final_set, temp_object: dict, crawl_flatfile_DTO: CrawlFlatfileRequestDTO):
     list_combinations_result = []
-    for combination_set in list_of_combination_final_set:
-        try:
-            dto: CurrentWorkingCombinationFF = combination_set['comb_dto']
-            first_df = combination_set['first_df']
-            second_df = combination_set['second_df']
-            matching_count = chunk_and_process(first_df, second_df)
-            result_dto: MatchingDTO = process_matching_result(matching_count, dto.table1rowCount, dto.table2rowCount)
-            list_combinations_result.append(save_combination_result(result_dto, dto))
-
-        except Exception as e:
-            print(e, "process combination error ")
-            log_utility.log_error(str(e))
-            log_utility.log_error(traceback.format_exc())
-
     process_id = crawl_flatfile_DTO.processId
-    result = {
-        'processId': process_id,
-        'flatFileMatchingResultResponseDTOS': list_combinations_result
-    }
-    print(result)
 
-    final_result = result
-
-    if temp_object:
-        process_id_to_find = process_id
-
-        if process_id_to_find in temp_object:
-            process_obj = temp_object[process_id_to_find]
-            process_obj.status = "SUCCESS"
-
-
-def get_combination_result(process_id):
     try:
-        value = final_result[process_id]
-        return {
+        for combination_set in list_of_combination_final_set:
+            try:
+                dto: CurrentWorkingCombinationFF = combination_set['comb_dto']
+                first_df = combination_set['first_df']
+                second_df = combination_set['second_df']
+                print("matching_count computation starts.... ")
+                matching_count = get_matching_count(first_df, second_df)
+                print("matching_count computation done .....")
+                result_dto: MatchingDTO = process_matching_result(matching_count, dto.table1rowCount,
+                                                                  dto.table2rowCount)
+                list_combinations_result.append(save_combination_result(result_dto, dto))
+
+            except Exception as e:
+                error_msg = f"Error processing combination: {str(e)}"
+                print(error_msg)
+                log_utility.log_error(error_msg)
+                log_utility.log_error(traceback.format_exc())
+
+        result = {
             'processId': process_id,
-            'flatFileMatchingResultResponseDTOS': value
+            'flatFileMatchingResultResponseDTOS': list_combinations_result
         }
-    except KeyError:
-        raise KeyError("invalid key")
+
+        if temp_object:
+            process_id_to_find = process_id
+            if process_id_to_find in temp_object:
+                process_obj = temp_object[process_id_to_find]
+                process_obj.status = "SUCCESS"
+
+    except Exception as e:
+        error_msg = f"Error executing combinations: {str(e)}"
+        print(error_msg)
+        log_utility.log_error(error_msg)
+        log_utility.log_error(traceback.format_exc())
+
+        result = {
+            'error': error_msg,
+            'processId': process_id
+        }
+
+    return result
+
+# def get_combination_result(process_id):
+#     try:
+#         value = final_result[process_id]
+#         return {
+#             'processId': process_id,
+#             'flatFileMatchingResultResponseDTOS': value
+#         }
+#     except KeyError:
+#         raise KeyError("invalid key")
