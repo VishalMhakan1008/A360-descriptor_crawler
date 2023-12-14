@@ -2,9 +2,9 @@ import json
 
 
 class CurrentWorkingCombinationFF:
-    def __init__(self, taskId, connectionType, tablePath1, tableName1, columnName1, column1ID, schema1ID, table1Size,
+    def __init__(self, taskId, connectionType, tablePath1, tableName1, columnName1, column1ID, schema1ID,
                  table1rowCount,
-                 tablePath2, tableName2, columnName2, column2Id, schema2Id, table2Size, table2rowCount,
+                 tablePath2, tableName2, columnName2, column2Id, schema2Id, table2rowCount,
                  fileFormat, userName, password, host, port, ignoreQuotations, quoteCharacter, withStrictQuotes,
                  delimiter):
         self.taskId = taskId
@@ -14,7 +14,6 @@ class CurrentWorkingCombinationFF:
         self.columnName1 = columnName1
         self.column1Id = column1ID
         self.schema1Id = schema1ID
-        self.table1Size = int(table1Size)
         self.table1rowCount = int(table1rowCount)
 
         self.tablePath2 = tablePath2
@@ -22,7 +21,6 @@ class CurrentWorkingCombinationFF:
         self.columnName2 = columnName2
         self.column2Id = column2Id
         self.schema2Id = schema2Id
-        self.table2Size = int(table2Size)
         self.table2rowCount = int(table2rowCount)
 
         self.fileFormat = fileFormat
@@ -49,5 +47,5 @@ class MatchingDTO:
         self.reverse_matching = reverse_matching
         self.accuracy_level = accuracy_level
         self.approval_status = approval_status
-        self.confidence_score = confidence_score
+        self.confidence_score = int(confidence_score)
 

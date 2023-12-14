@@ -89,7 +89,7 @@ def execute_combinations(list_of_combination_final_set, temp_object: dict, crawl
                 first_df = combination_set['first_df']
                 second_df = combination_set['second_df']
                 print("matching_count computation starts.... ")
-                matching_count = get_matching_count(first_df, second_df)
+                matching_count = get_matching_count(first_df, second_df, dto.columnName1, dto.columnName2)
                 print("matching_count computation done .....")
                 result_dto: MatchingDTO = process_matching_result(matching_count, dto.table1rowCount,
                                                                   dto.table2rowCount)
