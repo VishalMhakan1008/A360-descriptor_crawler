@@ -23,3 +23,8 @@ class ConnectionType(Enum):
     LOCAL = 'Local_Storage'
     SFTP = 'sftp'
     FTP = 'ftp'
+
+
+class File_Formate(Enum):
+    CSV = 'csv'
+    TXT = 'txt'

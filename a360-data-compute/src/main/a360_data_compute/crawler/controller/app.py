@@ -21,7 +21,6 @@ def generate_processId():
 def processCrawling():
     try:
         start_time = datetime.now()
-        print(start_time)
         dtos_data = request.get_json()
         process_id = int(dtos_data['processId'])
         process = temp_object[process_id]
@@ -45,14 +44,6 @@ def check_status(processId):
     return jsonify({'status': process.status})
 
 
-# @app.route('/process_details/<int:processId>', methods=['GET'])
-# def get_combination_result(processId):
-#     result = dataframe_comparison.get_combination_result(processId)
-#     return jsonify(result)
-
-
 if __name__ == "__main__":
     app.run(debug=True)
 
-
-# do your work here

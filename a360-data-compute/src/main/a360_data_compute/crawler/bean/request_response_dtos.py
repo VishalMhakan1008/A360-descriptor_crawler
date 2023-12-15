@@ -2,13 +2,10 @@ import json
 
 
 class CurrentWorkingCombinationFF:
-    def __init__(self, taskId, connectionType, tablePath1, tableName1, columnName1, column1ID, schema1ID,
+    def __init__(self, taskId,tablePath1, tableName1, columnName1, column1ID, schema1ID,
                  table1rowCount,
-                 tablePath2, tableName2, columnName2, column2Id, schema2Id, table2rowCount,
-                 fileFormat, userName, password, host, port, ignoreQuotations, quoteCharacter, withStrictQuotes,
-                 delimiter):
+                 tablePath2, tableName2, columnName2, column2Id, schema2Id, table2rowCount, ):
         self.taskId = taskId
-        self.connectionType = connectionType
         self.tablePath1 = tablePath1
         self.tableName1 = tableName1
         self.columnName1 = columnName1
@@ -23,6 +20,13 @@ class CurrentWorkingCombinationFF:
         self.schema2Id = schema2Id
         self.table2rowCount = int(table2rowCount)
 
+
+class CrawlFlatfileRequestDTO:
+    def __init__(self, type, processId, connectionType, fileFormat, userName, password, host, port, ignoreQuotations,
+                 quoteCharacter, withStrictQuotes, delimiter, currentWorkingCombinationFF):
+        self.type = type
+        self.processId = int(processId)
+        self.connectionType = connectionType
         self.fileFormat = fileFormat
         self.userName = userName
         self.password = password
@@ -32,12 +36,6 @@ class CurrentWorkingCombinationFF:
         self.quoteCharacter = quoteCharacter
         self.withStrictQuotes = withStrictQuotes
         self.delimiter = delimiter
-
-
-class CrawlFlatfileRequestDTO:
-    def __init__(self, type, processId, currentWorkingCombinationFF):
-        self.type = type
-        self.processId = int(processId)
         self.currentWorkingCombinationFF = [CurrentWorkingCombinationFF(**item) for item in currentWorkingCombinationFF]
 
 
@@ -48,4 +46,3 @@ class MatchingDTO:
         self.accuracy_level = accuracy_level
         self.approval_status = approval_status
         self.confidence_score = int(confidence_score)
-

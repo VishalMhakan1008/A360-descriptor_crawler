@@ -2,11 +2,12 @@ import os
 import traceback
 
 from src.main.a360_data_compute.crawler.bean.enums import AccuracyLevel, PropertiesBean, ApprovalStatus
-from src.main.a360_data_compute.crawler.bean.request_response_dtos import CurrentWorkingCombinationFF, CrawlFlatfileRequestDTO, \
+from src.main.a360_data_compute.crawler.bean.request_response_dtos import CurrentWorkingCombinationFF, \
+    CrawlFlatfileRequestDTO, \
     MatchingDTO
 
 from src.main.a360_data_compute.utils.LogUtility import LogUtility
-from src.main.a360_data_compute.utils.data_frame_operations import get_matching_count
+from src.main.a360_data_compute.utils.dataframe_operations import get_matching_count
 
 log_utility = LogUtility()
 
@@ -88,9 +89,7 @@ def execute_combinations(list_of_combination_final_set, temp_object: dict, crawl
                 dto: CurrentWorkingCombinationFF = combination_set['comb_dto']
                 first_df = combination_set['first_df']
                 second_df = combination_set['second_df']
-                print("matching_count computation starts.... ")
                 matching_count = get_matching_count(first_df, second_df, dto.columnName1, dto.columnName2)
-                print("matching_count computation done .....")
                 result_dto: MatchingDTO = process_matching_result(matching_count, dto.table1rowCount,
                                                                   dto.table2rowCount)
                 list_combinations_result.append(save_combination_result(result_dto, dto))
@@ -122,15 +121,4 @@ def execute_combinations(list_of_combination_final_set, temp_object: dict, crawl
             'error': error_msg,
             'processId': process_id
         }
-
     return result
-
-# def get_combination_result(process_id):
-#     try:
-#         value = final_result[process_id]
-#         return {
-#             'processId': process_id,
-#             'flatFileMatchingResultResponseDTOS': value
-#         }
-#     except KeyError:
-#         raise KeyError("invalid key")

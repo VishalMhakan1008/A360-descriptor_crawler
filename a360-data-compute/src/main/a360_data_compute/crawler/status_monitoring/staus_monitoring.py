@@ -27,15 +27,3 @@ class Process_monitoring:
             "time_taken": str(timedelta(seconds=self.end_time - self.start_time)),
             "result": self.result_path
         }
-
-
- # matching_result = FlatFileMatchingResultResponseDTO(dto.taskId, dto.column1Id,
- #                                                        dto.schema1Id, dto.tableName1,
- #                                                        dto.column2Id, dto.column2Id,
- #                                                        dto.schema2Id, dto.tablePath2,
- #                                                        combination_result['forward_matching'],
- #                                                        combination_result['reverse_matching'],
- #                                                        combination_result['approvalStatus'],
- #                                                        combination_result['accuracyLevel']
- #                                                        )
- #    return matching_result
